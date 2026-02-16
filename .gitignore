@@ -1,0 +1,21 @@
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/*.pyc
+backend/data/*.db
+backend/data/*.pkl
+
+# Node / React
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

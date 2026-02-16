@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+pandas
+scikit-learn
+python-multipart
+python-dotenv

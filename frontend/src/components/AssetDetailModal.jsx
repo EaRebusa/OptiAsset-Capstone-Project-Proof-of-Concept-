@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, Monitor, Laptop, Edit2, Save, AlertCircle } from 'lucide-react';
 
 const getStatusColor = (healthScore) => {
@@ -25,6 +25,16 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
         override_score: '',
         override_reason: ''
     });
+
+    // Calculate current age based on formData for live updates in edit mode
+    const calculatedCurrentAge = useMemo(() => {
+        if (!asset) return 0;
+        const now = new Date();
+        const createdAt = new Date(asset.created_at);
+        const monthsPassed = (now.getFullYear() - createdAt.getFullYear()) * 12 + (now.getMonth() - createdAt.getMonth());
+        return parseInt(formData.initial_age || 0) + Math.max(0, monthsPassed);
+    }, [asset, formData.initial_age]);
+
 
     useEffect(() => {
         if (asset) {
@@ -55,7 +65,6 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
     };
 
     const handleSave = () => {
-        // Prepare payload: convert numbers and handle empty strings
         const payload = {
             initial_age: parseInt(formData.initial_age),
             repairs: parseInt(formData.repairs),
@@ -111,8 +120,9 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
                                 Asset Details {isEditing && <span className="text-blue-600 text-[10px]">(Editable)</span>}
                             </h3>
                             <div className="grid grid-cols-2 gap-6">
+                                <DetailItem label="Current Age (for ML)" value={`${calculatedCurrentAge} months`} />
                                 <EditableField
-                                    label="Initial Age (months)"
+                                    label="Initial Age (Baseline)"
                                     name="initial_age"
                                     value={formData.initial_age}
                                     isEditing={isEditing}
@@ -228,6 +238,14 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
         </div>
     );
 };
+
+const DetailItem = ({ label, value }) => (
+    <div>
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{label}</p>
+        <p className="text-lg font-black text-slate-800">{value}</p>
+    </div>
+);
+
 
 const EditableField = ({ label, name, value, isEditing, onChange, type = "text", highlight = false }) => (
     <div>

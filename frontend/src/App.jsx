@@ -15,7 +15,9 @@ import {
     Activity,
     RefreshCw,
     Search,
-    XCircle
+    XCircle,
+    DollarSign,
+    WifiOff
 } from 'lucide-react';
 import {
     PieChart, Pie, Cell, ResponsiveContainer,
@@ -42,6 +44,11 @@ const COLORS = {
     Warning: '#f59e0b',
     Critical: '#ef4444',
     Unscored: '#94a3b8'
+};
+
+const DEVICE_COLORS = {
+    Laptops: '#3b82f6',
+    Desktops: '#64748b'
 };
 
 const getStatusColor = (healthScore) => {
@@ -170,12 +177,32 @@ const App = () => {
     const getEffectiveHealthScore = (asset) => asset.override_score || asset.health_score;
 
     const stats = useMemo(() => {
+        const total = assets.length;
+        const critical = assets.filter(a => getEffectiveHealthScore(a) === 'Critical').length;
+        const warning = assets.filter(a => getEffectiveHealthScore(a) === 'Warning').length;
+        const healthy = assets.filter(a => getEffectiveHealthScore(a) === 'Healthy').length;
+        const unscored = assets.filter(a => getEffectiveHealthScore(a) === 'Unscored').length;
+        
+        // Fleet Health Index: ((Healthy * 1.0) + (Warning * 0.5) + (Critical * 0)) / Total Assets * 100
+        const fleetHealth = total > 0 
+            ? Math.round(((healthy * 1.0) + (warning * 0.5) + (critical * 0)) / total * 100) 
+            : 0;
+            
+        const attention = critical + warning;
+        
+        // Financial Risk Exposure: (Critical Units * ₱40,000) + (Critical Units * ₱1,500)
+        const risk = (critical * 35000) + (critical * 1000);
+        
+        const desktops = assets.filter(a => a.model_name.includes('OptiPlex')).length;
+        const laptops = total - desktops;
+        
+        // Mocking stale data check
+        const stale = assets.filter(a => a.last_updated && (new Date() - new Date(a.last_updated)) > (30 * 24 * 60 * 60 * 1000)).length;
+
         return {
-            total: assets.length,
-            critical: assets.filter(a => getEffectiveHealthScore(a) === 'Critical').length,
-            warning: assets.filter(a => getEffectiveHealthScore(a) === 'Warning').length,
-            healthy: assets.filter(a => getEffectiveHealthScore(a) === 'Healthy').length,
-            unscored: assets.filter(a => getEffectiveHealthScore(a) === 'Unscored').length
+            total, critical, warning, healthy, unscored,
+            fleetHealth, attention, risk,
+            laptops, desktops, stale
         };
     }, [assets]);
 
@@ -183,6 +210,11 @@ const App = () => {
         { name: 'Healthy', value: stats.healthy },
         { name: 'Warning', value: stats.warning },
         { name: 'Critical', value: stats.critical },
+    ].filter(d => d.value > 0);
+
+    const deviceData = [
+        { name: 'Laptops', value: stats.laptops },
+        { name: 'Desktops', value: stats.desktops },
     ].filter(d => d.value > 0);
 
     const atRiskAssets = useMemo(() => {
@@ -209,88 +241,137 @@ const App = () => {
             case 'dashboard':
                 return (
                     <div className="space-y-8">
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                            <StatCard label="Inventory" value={stats.total} icon={<Package className="text-blue-600"/>} color="blue" onClick={() => handleFilterAndNavigate('')}/>
-                            <StatCard label="Critical" value={stats.critical} icon={<AlertCircle className="text-red-600"/>} color="red" onClick={() => handleFilterAndNavigate('Critical')}/>
-                            <StatCard label="Warning" value={stats.warning} icon={<AlertTriangle className="text-amber-600"/>} color="amber" onClick={() => handleFilterAndNavigate('Warning')}/>
-                            <StatCard label="Healthy" value={stats.healthy} icon={<CheckCircle2 className="text-green-600"/>} color="green" onClick={() => handleFilterAndNavigate('Healthy')}/>
+                        {/* Strategic Metrics */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <StatCard 
+                                label="Fleet Health Index" 
+                                value={`${stats.fleetHealth}%`} 
+                                icon={<Activity className="text-green-600"/>} 
+                                color="green" 
+                                subtext="Reliability Score"
+                            />
+                            <StatCard 
+                                label="Attention Required" 
+                                value={stats.attention} 
+                                icon={<AlertCircle className="text-amber-600"/>} 
+                                color="amber" 
+                                subtext="Critical + Warning"
+                                onClick={() => handleFilterAndNavigate('Warning')}
+                            />
+                            <StatCard 
+                                label="Financial Risk" 
+                                value={`₱${stats.risk.toLocaleString()}`} 
+                                icon={<DollarSign className="text-red-600"/>} 
+                                color="red" 
+                                subtext="Capital at Risk"
+                                onClick={() => handleFilterAndNavigate('Critical')}
+                            />
                         </div>
+
+                        {stats.stale > 0 && (
+                            <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-center gap-3 text-amber-800">
+                                <WifiOff size={20} />
+                                <p className="font-bold text-sm">Insights are Stale: {stats.stale} units haven't reported data in 30+ days.</p>
+                            </div>
+                        )}
+
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            {/* Health Distribution */}
                             <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col items-center">
-                                <h3 className="text-lg font-black text-slate-800 mb-6 uppercase tracking-tight">Fleet Health</h3>
-                                <div className="h-64 w-full">
+                                <h3 className="text-lg font-black text-slate-800 mb-6 uppercase tracking-tight">Health Distribution</h3>
+                                <div className="h-48 w-full">
                                     {pieData.length > 0 ? (
                                         <ResponsiveContainer width="100%" height="100%">
                                             <PieChart>
                                                 <Pie
                                                     data={pieData}
-                                                    innerRadius={65}
-                                                    outerRadius={85}
+                                                    innerRadius={50}
+                                                    outerRadius={70}
                                                     paddingAngle={5}
                                                     dataKey="value"
                                                     stroke="none"
-                                                    activeIndex={activePieIndex}
-                                                    onMouseEnter={(_, index) => setActivePieIndex(index)}
-                                                    onMouseLeave={() => setActivePieIndex(null)}
                                                     onClick={(data) => handleFilterAndNavigate(data.name)}
                                                 >
                                                     {pieData.map((entry, index) => (
-                                                        <Cell
-                                                            key={entry.name}
-                                                            fill={COLORS[entry.name]}
-                                                            style={{
-                                                                transform: activePieIndex === index ? 'scale(1.05)' : 'scale(1)',
-                                                                transformOrigin: 'center center',
-                                                                transition: 'transform 0.2s ease-in-out',
-                                                                cursor: 'pointer'
-                                                            }}
-                                                        />
+                                                        <Cell key={entry.name} fill={COLORS[entry.name]} cursor="pointer" />
                                                     ))}
                                                 </Pie>
                                                 <Tooltip />
                                             </PieChart>
                                         </ResponsiveContainer>
                                     ) : (
-                                        <div className="h-full flex items-center justify-center text-slate-300 italic text-sm">No diagnostic data available</div>
+                                        <div className="h-full flex items-center justify-center text-slate-300 italic text-sm">No data</div>
                                     )}
                                 </div>
-                                <div className="grid grid-cols-2 gap-4 w-full mt-6">
+                                <div className="flex justify-center gap-4 w-full mt-4">
                                     {pieData.map(d => (
-                                        <div key={d.name} className="flex flex-col p-3 rounded-2xl bg-slate-50 border border-slate-100">
-                                            <span className="text-[10px] font-black uppercase text-slate-400">{d.name}</span>
-                                            <span className="text-xl font-black">{d.value}</span>
+                                        <div key={d.name} className="flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[d.name] }}></div>
+                                            <span className="text-xs font-bold text-slate-500 uppercase">{d.name}</span>
                                         </div>
                                     ))}
                                 </div>
                             </div>
-                            <div className="lg:col-span-2 bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
+
+                            {/* Device Type Breakdown */}
+                            <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col items-center">
+                                <h3 className="text-lg font-black text-slate-800 mb-6 uppercase tracking-tight">Device Types</h3>
+                                <div className="h-48 w-full">
+                                    {deviceData.length > 0 ? (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <PieChart>
+                                                <Pie
+                                                    data={deviceData}
+                                                    innerRadius={50}
+                                                    outerRadius={70}
+                                                    paddingAngle={5}
+                                                    dataKey="value"
+                                                    stroke="none"
+                                                >
+                                                    {deviceData.map((entry, index) => (
+                                                        <Cell key={entry.name} fill={DEVICE_COLORS[entry.name]} />
+                                                    ))}
+                                                </Pie>
+                                                <Tooltip />
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                    ) : (
+                                        <div className="h-full flex items-center justify-center text-slate-300 italic text-sm">No data</div>
+                                    )}
+                                </div>
+                                <div className="flex justify-center gap-4 w-full mt-4">
+                                    {deviceData.map(d => (
+                                        <div key={d.name} className="flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: DEVICE_COLORS[d.name] }}></div>
+                                            <span className="text-xs font-bold text-slate-500 uppercase">{d.name}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* At Risk Assets */}
+                            <div className="lg:col-span-1 bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col">
                                 <div className="flex justify-between items-center mb-6">
                                     <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">At-Risk Assets</h3>
                                     <button onClick={() => handleTabChange('inventory')} className="text-xs font-bold text-blue-600 hover:underline">View All</button>
                                 </div>
-                                <div className="space-y-4">
+                                <div className="space-y-4 overflow-y-auto max-h-64 pr-2">
                                     {atRiskAssets.map(asset => (
-                                        <div key={asset.id} onClick={() => handleAssetClick(asset)} className="group flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-100 hover:border-blue-200 transition-all cursor-pointer">
-                                            <div className="flex items-center gap-4">
-                                                <div className={`p-3 rounded-xl ${getEffectiveHealthScore(asset) === 'Critical' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
-                                                    {asset.model_name.includes('OptiPlex') ? <Monitor size={20}/> : <Laptop size={20}/>}
+                                        <div key={asset.id} onClick={() => handleAssetClick(asset)} className="group flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-blue-200 transition-all cursor-pointer">
+                                            <div className="flex items-center gap-3">
+                                                <div className={`p-2 rounded-xl ${getEffectiveHealthScore(asset) === 'Critical' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
+                                                    {asset.model_name.includes('OptiPlex') ? <Monitor size={16}/> : <Laptop size={16}/>}
                                                 </div>
                                                 <div>
-                                                    <p className="font-black text-slate-800 tracking-tight">{asset.asset_id}</p>
-                                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{asset.model_name}</p>
+                                                    <p className="font-black text-slate-800 text-sm">{asset.asset_id}</p>
+                                                    <p className="text-[10px] text-slate-400 font-bold uppercase">{asset.model_name}</p>
                                                 </div>
                                             </div>
-                                            <div className="flex items-center gap-6">
-                                                <div className="text-right hidden sm:block">
-                                                    <p className="text-xs font-black text-slate-400 uppercase">Age</p>
-                                                    <p className="text-sm font-bold">{asset.current_age} months</p>
-                                                </div>
-                                                <ChevronRight size={20} className="text-slate-300 group-hover:text-blue-500 transition-colors" />
-                                            </div>
+                                            <ChevronRight size={16} className="text-slate-300 group-hover:text-blue-500 transition-colors" />
                                         </div>
                                     ))}
                                     {atRiskAssets.length === 0 && (
-                                        <div className="py-20 text-center text-slate-300 italic">No assets currently flagged for review.</div>
+                                        <div className="py-10 text-center text-slate-300 italic text-sm">No assets currently flagged.</div>
                                     )}
                                 </div>
                             </div>
@@ -298,7 +379,14 @@ const App = () => {
                     </div>
                 );
             case 'inventory':
-                return <Inventory filteredAssets={filteredAssets} handleDiagnose={handleDiagnose} diagnosing={diagnosing} getStatusColor={getStatusColor} onAssetClick={handleAssetClick} />;
+                return <Inventory 
+                    filteredAssets={filteredAssets} 
+                    handleDiagnose={handleDiagnose} 
+                    diagnosing={diagnosing} 
+                    getStatusColor={getStatusColor} 
+                    onAssetClick={handleAssetClick} 
+                    loading={loading}
+                />;
             case 'upload':
                 return <BulkUpload />;
             case 'specs':
@@ -355,7 +443,7 @@ const App = () => {
                 </header>
 
                 {error && (
-                    <div className="mx-10 mt-6 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-3 text-red-600">
+                    <div className="mx-10 mt-6 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-3 text-red-600 shadow-sm">
                         <XCircle size={20} />
                         <p className="text-sm font-bold">{error}</p>
                     </div>
@@ -393,7 +481,7 @@ const NavItem = ({ icon, label, active, onClick }) => (
     </button>
 );
 
-const StatCard = ({ label, value, icon, color, onClick }) => {
+const StatCard = ({ label, value, icon, color, subtext, onClick }) => {
     const colorMap = {
         blue: 'bg-blue-50 border-blue-100',
         red: 'bg-red-50 border-red-100',
@@ -410,6 +498,7 @@ const StatCard = ({ label, value, icon, color, onClick }) => {
             </div>
             <p className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-1">{label}</p>
             <p className="text-4xl font-black text-slate-800 leading-none tracking-tighter">{value}</p>
+            {subtext && <p className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-wider">{subtext}</p>}
         </div>
     );
 };

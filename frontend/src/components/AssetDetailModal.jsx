@@ -218,7 +218,14 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
                                         )}
                                     </div>
                                     {isOverridden && !isEditing && (
-                                        <span className="px-3 py-1 bg-slate-200 text-slate-600 rounded-full text-[10px] font-black uppercase tracking-widest">Manual Override</span>
+                                        <Tooltip text={
+                                            <div className="text-left">
+                                                <p className="font-bold mb-1">Override Reason</p>
+                                                <p className="italic text-slate-300">"{asset.override_reason}"</p>
+                                            </div>
+                                        }>
+                                            <span className="px-3 py-1 bg-slate-200 text-slate-600 rounded-full text-[10px] font-black uppercase tracking-widest cursor-help">Manual Override</span>
+                                        </Tooltip>
                                     )}
                                 </div>
 

@@ -1,0 +1,5 @@
+asset_id,model_name,current_temp,current_usage,maint_score,repairs
+AST-9999,Dell Latitude 5440,999.9,20.0,10,0
+AST-8888,Dell Latitude 5440,VERY_HOT,20.0,10,0
+,Dell Latitude 5440,45.0,20.0,10,0
+AST-7777,Super-Gaming-PC-9000,45.0,20.0,10,0

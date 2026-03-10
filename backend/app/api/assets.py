@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File, Body
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
-from typing import List, Optional
+from typing import List, Optional, Dict
 import pandas as pd
 import io
+from datetime import datetime
 from app.db.session import get_db, SessionLocal
 from app.models.schemas import Asset, Spec
 from app.schemas.asset import AssetResponse, AssetUpdate
@@ -18,23 +19,25 @@ def get_assets(search: Optional[str] = None, db: Session = Depends(get_db)):
     Can be filtered by a search term, which can be a health status or a text search on asset ID/model name.
     """
     query = db.query(Asset)
-
+    
+    # Apply filtering logic
     if search:
+        # Check if the search term matches any health status
         health_statuses = ["Healthy", "Warning", "Critical", "Unscored"]
-        # Check if the search term is a specific health status
+        
+        # We need to construct a complex filter because "Healthy" could be in health_score OR override_score
+        status_conditions = []
+        
+        # If the search term is exactly one of the known statuses, we prioritize filtering by status logic
         if search in health_statuses:
-            # Filter by the effective health score. An asset's score is its override_score if it exists, otherwise its health_score.
-            query = query.filter(
-                or_(
-                    Asset.override_score == search,
-                    and_(
-                        Asset.override_score == None,
-                        Asset.health_score == search
-                    )
-                )
-            )
+            # Case 1: The asset has an override_score matching the search
+            cond1 = Asset.override_score == search
+            # Case 2: The asset has NO override_score, but its computed health_score matches
+            cond2 = and_(Asset.override_score == None, Asset.health_score == search)
+            
+            query = query.filter(or_(cond1, cond2))
         else:
-            # If not a status, perform a text search on asset ID and model name
+            # General text search on ID or Model
             search_term = f"%{search}%"
             query = query.filter(
                 or_(
@@ -44,6 +47,7 @@ def get_assets(search: Optional[str] = None, db: Session = Depends(get_db)):
             )
 
     assets = query.all()
+    # Calculate current age dynamically for display
     for a in assets:
         a.current_age = engine.calculate_current_age(a.initial_age, a.created_at)
     return assets
@@ -56,6 +60,7 @@ async def trigger_bulk_diagnostic(background_tasks: BackgroundTasks):
         try:
             assets = db.query(Asset).all()
             for asset in assets:
+                # We need a Spec to calculate features. If missing, we skip.
                 spec = db.query(Spec).filter(Spec.model_name == asset.model_name).first()
                 if spec:
                     features = engine.prepare_features(asset, spec)
@@ -81,7 +86,7 @@ def run_single_diagnostic(asset_id: str, db: Session = Depends(get_db)):
 
     spec = db.query(Spec).filter(Spec.model_name == asset.model_name).first()
     if not spec:
-        raise HTTPException(status_code=400, detail="Manufacturer specs missing")
+        raise HTTPException(status_code=400, detail="Manufacturer specs missing for this model.")
 
     features = engine.prepare_features(asset, spec)
     label, cid = engine.predict_health(features)
@@ -91,35 +96,85 @@ def run_single_diagnostic(asset_id: str, db: Session = Depends(get_db)):
     db.commit()
     return {"asset_id": asset_id, "score": label, "cluster": cid}
 
-@router.post("/upload")
-async def upload_assets(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """Ingests CSV for Living Inventory updates."""
-    if not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="CSV only.")
+@router.post("/bulk-upload")
+async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
+    """
+    Handles JSON payload from frontend's PapaParse.
+    Performs upsert with timestamp checking.
+    """
+    logs = []
+    processed_count = 0
+
+    for row in data:
+        asset_id = row.get('asset_id')
+        if not asset_id:
+            logs.append({"status": "skipped", "message": "Row missing asset_id"})
+            continue
+
+        # Try to parse the incoming timestamp
+        incoming_ts = None
+        if row.get('last_updated'):
+            try:
+                # Handle both ISO format and simple date strings if necessary
+                incoming_ts = datetime.fromisoformat(row['last_updated'].replace('Z', '+00:00'))
+            except ValueError:
+                pass 
+
+        existing_asset = db.query(Asset).filter(Asset.asset_id == asset_id).first()
+
+        if existing_asset:
+            # Temporal Integrity Check
+            # Ensure both timestamps are timezone-aware or both are naive before comparing
+            if existing_asset.last_updated and incoming_ts:
+                db_ts = existing_asset.last_updated
+                if db_ts.tzinfo is None:
+                    # If DB timestamp is naive, assume UTC
+                    db_ts = db_ts.replace(tzinfo=datetime.utcnow().astimezone().tzinfo)
+                
+                if incoming_ts.tzinfo is None:
+                    # If incoming timestamp is naive, assume UTC
+                    incoming_ts = incoming_ts.replace(tzinfo=datetime.utcnow().astimezone().tzinfo)
+
+                # If DB has a newer timestamp than the CSV, we skip this row.
+                if db_ts > incoming_ts:
+                    logs.append({"status": "skipped", "message": f"Asset {asset_id}: Stale data (DB is newer)."})
+                    continue
+            
+            # Update existing asset
+            existing_asset.current_temp = row.get('current_temp', existing_asset.current_temp)
+            existing_asset.current_usage = row.get('current_usage', existing_asset.current_usage)
+            existing_asset.maint_score = row.get('maint_score', existing_asset.maint_score)
+            existing_asset.repairs = row.get('repairs', existing_asset.repairs)
+            existing_asset.last_updated = incoming_ts or datetime.utcnow()
+            
+            logs.append({"status": "updated", "message": f"Asset {asset_id} updated."})
+
+        else:
+            # Create new asset
+            new_asset = Asset(
+                asset_id=asset_id,
+                model_name=row.get('model_name', 'Unknown Model'),
+                initial_age=row.get('initial_age', 0),
+                current_temp=row.get('current_temp', 0.0),
+                current_usage=row.get('current_usage', 0.0),
+                maint_score=row.get('maint_score', 5),
+                repairs=row.get('repairs', 0),
+                last_updated=incoming_ts or datetime.utcnow()
+            )
+            db.add(new_asset)
+            logs.append({"status": "created", "message": f"Asset {asset_id} onboarded."})
+
+        processed_count += 1
+
     try:
-        content = await file.read()
-        df = pd.read_csv(io.BytesIO(content))
-        count = 0
-        for _, row in df.iterrows():
-            asset = db.query(Asset).filter(Asset.asset_id == row['asset_id']).first()
-            if asset:
-                asset.current_temp = row['current_temp']
-                asset.current_usage = row['current_usage']
-                asset.maint_score = row.get('maint_score', asset.maint_score)
-                asset.repairs = row.get('repairs', asset.repairs)
-            else:
-                db.add(Asset(
-                    asset_id=row['asset_id'], model_name=row['model_name'],
-                    initial_age=row.get('initial_age', 0), current_temp=row['current_temp'],
-                    current_usage=row['current_usage'], maint_score=row.get('maint_score', 5),
-                    repairs=row.get('repairs', 0)
-                ))
-            count += 1
         db.commit()
-        return {"processed": count}
+        return {"processed": processed_count, "logs": logs}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        # Log the actual error for debugging
+        print(f"Bulk Upload Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database Error: {str(e)}")
+
 
 @router.patch("/{asset_id}", response_model=AssetResponse)
 def update_asset(asset_id: str, obj_in: AssetUpdate, db: Session = Depends(get_db)):

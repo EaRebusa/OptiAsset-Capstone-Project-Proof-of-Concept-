@@ -1,5 +1,15 @@
 import React from 'react';
 import { Monitor, Laptop } from 'lucide-react';
+import Tooltip from './Tooltip';
+
+const formatAge = (months) => {
+    if (months === null || months === undefined) return 'N/A';
+    const years = Math.floor(months / 12);
+    const remainingMonths = months % 12;
+    if (years === 0) return `${remainingMonths}m`;
+    if (remainingMonths === 0) return `${years}y`;
+    return `${years}y ${remainingMonths}m`;
+};
 
 const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor, onAssetClick }) => {
     return (
@@ -38,7 +48,9 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
                             </td>
                             <td className="px-8 py-6">
                                 <div className="flex flex-col">
-                                    <span className="text-sm font-black text-slate-700">{asset.current_age}m</span>
+                                    <Tooltip text={`${asset.current_age} months`}>
+                                        <span className="text-sm font-black text-slate-700 cursor-default">{formatAge(asset.current_age)}</span>
+                                    </Tooltip>
                                     <span className="text-[10px] text-slate-400 font-bold uppercase">Effective Age</span>
                                 </div>
                             </td>

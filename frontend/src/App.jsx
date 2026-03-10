@@ -160,8 +160,8 @@ const App = () => {
         window.location.hash = tab;
     };
 
-    const handlePieClick = (data) => {
-        setSearchTerm(data.name);
+    const handleFilterAndNavigate = (filter) => {
+        setSearchTerm(filter);
         handleTabChange('inventory');
     };
 
@@ -210,10 +210,10 @@ const App = () => {
                 return (
                     <div className="space-y-8">
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                            <StatCard label="Inventory" value={stats.total} icon={<Package className="text-blue-600"/>} color="blue"/>
-                            <StatCard label="Critical" value={stats.critical} icon={<AlertCircle className="text-red-600"/>} color="red"/>
-                            <StatCard label="Warning" value={stats.warning} icon={<AlertTriangle className="text-amber-600"/>} color="amber"/>
-                            <StatCard label="Healthy" value={stats.healthy} icon={<CheckCircle2 className="text-green-600"/>} color="green"/>
+                            <StatCard label="Inventory" value={stats.total} icon={<Package className="text-blue-600"/>} color="blue" onClick={() => handleFilterAndNavigate('')}/>
+                            <StatCard label="Critical" value={stats.critical} icon={<AlertCircle className="text-red-600"/>} color="red" onClick={() => handleFilterAndNavigate('Critical')}/>
+                            <StatCard label="Warning" value={stats.warning} icon={<AlertTriangle className="text-amber-600"/>} color="amber" onClick={() => handleFilterAndNavigate('Warning')}/>
+                            <StatCard label="Healthy" value={stats.healthy} icon={<CheckCircle2 className="text-green-600"/>} color="green" onClick={() => handleFilterAndNavigate('Healthy')}/>
                         </div>
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                             <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col items-center">
@@ -232,7 +232,7 @@ const App = () => {
                                                     activeIndex={activePieIndex}
                                                     onMouseEnter={(_, index) => setActivePieIndex(index)}
                                                     onMouseLeave={() => setActivePieIndex(null)}
-                                                    onClick={handlePieClick}
+                                                    onClick={(data) => handleFilterAndNavigate(data.name)}
                                                 >
                                                     {pieData.map((entry, index) => (
                                                         <Cell
@@ -393,19 +393,20 @@ const NavItem = ({ icon, label, active, onClick }) => (
     </button>
 );
 
-const StatCard = ({ label, value, icon, color }) => {
+const StatCard = ({ label, value, icon, color, onClick }) => {
     const colorMap = {
         blue: 'bg-blue-50 border-blue-100',
         red: 'bg-red-50 border-red-100',
         amber: 'bg-amber-50 border-amber-100',
         green: 'bg-green-50 border-green-100'
     };
+    const clickableClasses = onClick ? 'cursor-pointer hover:shadow-lg hover:-translate-y-1 hover:border-blue-200' : '';
 
     return (
-        <div className={`bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm transition-all hover:shadow-md hover:-translate-y-1`}>
+        <div onClick={onClick} className={`bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm transition-all ${clickableClasses}`}>
             <div className="flex justify-between items-start mb-4">
                 <div className={`p-4 rounded-2xl ${colorMap[color]}`}>{icon}</div>
-                <div className="w-1.s h-1.5 rounded-full bg-slate-200"></div>
+                <div className="w-1.5 h-1.5 rounded-full bg-slate-200"></div>
             </div>
             <p className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-1">{label}</p>
             <p className="text-4xl font-black text-slate-800 leading-none tracking-tighter">{value}</p>

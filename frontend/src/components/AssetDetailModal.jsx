@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Monitor, Laptop, Edit2, Save, AlertCircle } from 'lucide-react';
+import Tooltip from './Tooltip';
 
 const getStatusColor = (healthScore) => {
     switch (healthScore) {
@@ -14,6 +15,14 @@ const getStatusColor = (healthScore) => {
     }
 };
 
+const formatAge = (months) => {
+    const years = Math.floor(months / 12);
+    const remainingMonths = months % 12;
+    if (years === 0) return `${remainingMonths}m`;
+    if (remainingMonths === 0) return `${years}y`;
+    return `${years}y ${remainingMonths}m`;
+};
+
 const AssetDetailModal = ({ asset, onClose, onSave }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [formData, setFormData] = useState({
@@ -26,7 +35,6 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
         override_reason: ''
     });
 
-    // Calculate current age based on formData for live updates in edit mode
     const calculatedCurrentAge = useMemo(() => {
         if (!asset) return 0;
         const now = new Date();
@@ -120,7 +128,11 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
                                 Asset Details {isEditing && <span className="text-blue-600 text-[10px]">(Editable)</span>}
                             </h3>
                             <div className="grid grid-cols-2 gap-6">
-                                <DetailItem label="Current Age (for ML)" value={`${calculatedCurrentAge} months`} />
+                                <DetailItem 
+                                    label="Current Age (for ML)" 
+                                    value={formatAge(calculatedCurrentAge)} 
+                                    tooltipText={`${calculatedCurrentAge} months`}
+                                />
                                 <EditableField
                                     label="Initial Age (Baseline)"
                                     name="initial_age"
@@ -128,6 +140,8 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
                                     isEditing={isEditing}
                                     onChange={handleInputChange}
                                     type="number"
+                                    displayValue={formatAge(formData.initial_age)}
+                                    tooltipText={`${formData.initial_age} months`}
                                 />
                                 <EditableField
                                     label="Repairs Count"
@@ -239,15 +253,17 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
     );
 };
 
-const DetailItem = ({ label, value }) => (
+const DetailItem = ({ label, value, tooltipText }) => (
     <div>
         <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{label}</p>
-        <p className="text-lg font-black text-slate-800">{value}</p>
+        <Tooltip text={tooltipText}>
+            <p className="text-lg font-black text-slate-800 cursor-default">{value}</p>
+        </Tooltip>
     </div>
 );
 
 
-const EditableField = ({ label, name, value, isEditing, onChange, type = "text", highlight = false }) => (
+const EditableField = ({ label, name, value, isEditing, onChange, type = "text", highlight = false, displayValue, tooltipText }) => (
     <div>
         <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{label}</p>
         {isEditing ? (
@@ -259,7 +275,9 @@ const EditableField = ({ label, name, value, isEditing, onChange, type = "text",
                 className="w-full p-2 bg-white border border-slate-200 rounded-lg text-lg font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             />
         ) : (
-            <p className={`text-lg font-black ${highlight ? 'text-red-500' : 'text-slate-800'}`}>{value}</p>
+            <Tooltip text={tooltipText}>
+                <p className={`text-lg font-black ${highlight ? 'text-red-500' : 'text-slate-800'} cursor-default`}>{displayValue || value}</p>
+            </Tooltip>
         )}
     </div>
 );

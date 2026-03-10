@@ -18,6 +18,7 @@ const BulkUpload = () => {
     const [manualEntry, setManualEntry] = useState({
         asset_id: '',
         model_name: '',
+        device_type: 'laptop', // Default to laptop
         initial_age: '',
         repairs: 0,
         maint_score: 5,
@@ -43,6 +44,11 @@ const BulkUpload = () => {
         const age = parseInt(row.initial_age);
         if (isNaN(age) || age < 0) {
             errors.push(`Invalid Age: ${row.initial_age}`);
+        }
+
+        const maint = parseInt(row.maint_score);
+        if (isNaN(maint) || maint < 1 || maint > 10) {
+            errors.push(`Invalid Maint Score: ${row.maint_score} (Must be 1-10)`);
         }
 
         return errors;
@@ -190,7 +196,7 @@ const BulkUpload = () => {
             await axios.post(`${API_BASE_URL}/assets/`, payload);
             setLogs([{ type: 'success', message: `Asset ${manualEntry.asset_id} added successfully.` }]);
             setManualEntry({
-                asset_id: '', model_name: '', initial_age: '', repairs: 0, maint_score: 5, current_temp: '', current_usage: ''
+                asset_id: '', model_name: '', device_type: 'laptop', initial_age: '', repairs: 0, maint_score: 5, current_temp: '', current_usage: ''
             });
             setShowManualEntry(false);
 
@@ -229,10 +235,24 @@ const BulkUpload = () => {
                     <form onSubmit={handleManualSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         <InputGroup label="Asset ID" value={manualEntry.asset_id} onChange={e => setManualEntry({...manualEntry, asset_id: e.target.value})} placeholder="e.g., OPT-001" required />
                         <InputGroup label="Model Name" value={manualEntry.model_name} onChange={e => setManualEntry({...manualEntry, model_name: e.target.value})} placeholder="e.g., Dell OptiPlex 7090" required />
+                        
+                        <div className="flex flex-col gap-2">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Device Type</label>
+                            <select
+                                value={manualEntry.device_type}
+                                onChange={e => setManualEntry({...manualEntry, device_type: e.target.value})}
+                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                            >
+                                <option value="laptop">Laptop</option>
+                                <option value="desktop">Desktop</option>
+                            </select>
+                        </div>
+
                         <InputGroup label="Initial Age (Months)" type="number" value={manualEntry.initial_age} onChange={e => setManualEntry({...manualEntry, initial_age: e.target.value})} placeholder="0" required />
                         <InputGroup label="Current Temp (°C)" type="number" value={manualEntry.current_temp} onChange={e => setManualEntry({...manualEntry, current_temp: e.target.value})} placeholder="45.5" required />
                         <InputGroup label="Usage (Hrs/Week)" type="number" value={manualEntry.current_usage} onChange={e => setManualEntry({...manualEntry, current_usage: e.target.value})} placeholder="40" required />
                         <InputGroup label="Repairs Count" type="number" value={manualEntry.repairs} onChange={e => setManualEntry({...manualEntry, repairs: e.target.value})} placeholder="0" />
+                        <InputGroup label="Maint Score (1-10)" type="number" value={manualEntry.maint_score} onChange={e => setManualEntry({...manualEntry, maint_score: e.target.value})} placeholder="5" required />
 
                         <div className="md:col-span-2 lg:col-span-3 flex justify-end gap-4 mt-4">
                             <button type="submit" disabled={uploading} className="flex items-center gap-2 px-8 py-3 bg-blue-600 text-white rounded-xl font-bold uppercase tracking-wider hover:bg-blue-700 transition shadow-lg shadow-blue-200 disabled:opacity-50">

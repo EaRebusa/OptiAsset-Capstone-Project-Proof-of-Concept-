@@ -7,7 +7,7 @@ import io
 from datetime import datetime
 from app.db.session import get_db, SessionLocal
 from app.models.schemas import Asset, Spec
-from app.schemas.asset import AssetResponse, AssetUpdate
+from app.schemas.asset import AssetResponse, AssetUpdate, AssetCreate
 from app.core.engine import engine
 
 router = APIRouter(prefix="/assets", tags=["Assets"])
@@ -52,6 +52,53 @@ def get_assets(search: Optional[str] = None, db: Session = Depends(get_db)):
         a.current_age = engine.calculate_current_age(a.initial_age, a.created_at)
     return assets
 
+@router.post("/", response_model=AssetResponse)
+def create_asset(asset_in: AssetCreate, db: Session = Depends(get_db)):
+    """
+    Creates a new asset manually.
+    Handles device_type fallback if model is unknown.
+    """
+    existing_asset = db.query(Asset).filter(Asset.asset_id == asset_in.asset_id).first()
+    if existing_asset:
+        raise HTTPException(status_code=400, detail="Asset ID already exists")
+
+    # Determine if we need to use a generic fallback
+    is_generic = False
+    spec = db.query(Spec).filter(Spec.model_name == asset_in.model_name).first()
+    
+    if not spec:
+        # Fallback logic
+        if asset_in.device_type == "laptop":
+            spec = db.query(Spec).filter(Spec.model_name == "Generic Laptop").first()
+        elif asset_in.device_type == "desktop":
+            spec = db.query(Spec).filter(Spec.model_name == "Generic Desktop").first()
+        
+        if spec:
+            is_generic = True
+
+    new_asset = Asset(
+        asset_id=asset_in.asset_id,
+        model_name=asset_in.model_name,
+        device_type=asset_in.device_type,
+        initial_age=asset_in.initial_age,
+        current_temp=asset_in.current_temp,
+        current_usage=asset_in.current_usage,
+        maint_score=asset_in.maint_score,
+        repairs=asset_in.repairs,
+        is_generic=is_generic,
+        last_updated=asset_in.last_updated or datetime.utcnow()
+    )
+    
+    db.add(new_asset)
+    try:
+        db.commit()
+        db.refresh(new_asset)
+        new_asset.current_age = engine.calculate_current_age(new_asset.initial_age, new_asset.created_at)
+        return new_asset
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database Error: {str(e)}")
+
 @router.post("/bulk-diagnose")
 async def trigger_bulk_diagnostic(background_tasks: BackgroundTasks):
     """Triggers fleet-wide scoring in the background."""
@@ -60,13 +107,23 @@ async def trigger_bulk_diagnostic(background_tasks: BackgroundTasks):
         try:
             assets = db.query(Asset).all()
             for asset in assets:
-                # We need a Spec to calculate features. If missing, we skip.
                 spec = db.query(Spec).filter(Spec.model_name == asset.model_name).first()
-                if spec:
-                    features = engine.prepare_features(asset, spec)
-                    label, cid = engine.predict_health(features)
-                    asset.health_score = label
-                    asset.cluster_id = cid
+                if not spec:
+                    # Fallback logic
+                    if asset.device_type == "laptop":
+                        spec = db.query(Spec).filter(Spec.model_name == "Generic Laptop").first()
+                    elif asset.device_type == "desktop":
+                        spec = db.query(Spec).filter(Spec.model_name == "Generic Desktop").first()
+                    
+                    if spec:
+                        asset.is_generic = True
+                    else:
+                        continue # Skip if no spec found
+
+                features = engine.prepare_features(asset, spec)
+                label, cid = engine.predict_health(features)
+                asset.health_score = label
+                asset.cluster_id = cid
             db.commit()
         finally:
             db.close()
@@ -86,7 +143,16 @@ def run_single_diagnostic(asset_id: str, db: Session = Depends(get_db)):
 
     spec = db.query(Spec).filter(Spec.model_name == asset.model_name).first()
     if not spec:
-        raise HTTPException(status_code=400, detail="Manufacturer specs missing for this model.")
+        # Fallback logic
+        if asset.device_type == "laptop":
+            spec = db.query(Spec).filter(Spec.model_name == "Generic Laptop").first()
+        elif asset.device_type == "desktop":
+            spec = db.query(Spec).filter(Spec.model_name == "Generic Desktop").first()
+        
+        if spec:
+            asset.is_generic = True
+        else:
+            raise HTTPException(status_code=400, detail="Manufacturer specs missing for this model.")
 
     features = engine.prepare_features(asset, spec)
     label, cid = engine.predict_health(features)
@@ -154,6 +220,7 @@ async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
             new_asset = Asset(
                 asset_id=asset_id,
                 model_name=row.get('model_name', 'Unknown Model'),
+                device_type=row.get('device_type'), # Added device_type
                 initial_age=row.get('initial_age', 0),
                 current_temp=row.get('current_temp', 0.0),
                 current_usage=row.get('current_usage', 0.0),

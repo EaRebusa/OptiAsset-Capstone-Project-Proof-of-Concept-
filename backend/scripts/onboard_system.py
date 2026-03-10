@@ -21,6 +21,9 @@ def onboard():
         {"type": "laptop", "name": "HP EliteBook 840", "t": 47.5, "u": 27.5, "w": 36},
         {"type": "desktop", "name": "Dell OptiPlex 7000", "t": 41.5, "u": 37.5, "w": 36},
         {"type": "desktop", "name": "HP ProDesk 400", "t": 41.5, "u": 37.5, "w": 36},
+        # Generic Fallbacks
+        {"type": "desktop", "name": "Generic Desktop", "t": 45.0, "u": 40.0, "w": 12},
+        {"type": "laptop", "name": "Generic Laptop", "t": 50.0, "u": 30.0, "w": 12},
     ]
 
     print("[2/3] Seeding Specs Library...")
@@ -33,7 +36,10 @@ def onboard():
     db.commit()
 
     # Import your generated 1,200 row dataset
-    csv_path = os.path.join("data", "optiasset_inventory_1200.csv")
+    # Robust pathing: CSV is in backend/data/
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # .../backend
+    csv_path = os.path.join(base_dir, "data", "optiasset_inventory_1200.csv")
+
     if os.path.exists(csv_path):
         print(f"[3/3] Importing assets from {csv_path}...")
         df = pd.read_csv(csv_path)

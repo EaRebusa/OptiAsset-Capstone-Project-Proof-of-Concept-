@@ -35,8 +35,17 @@ def run_bulk_diagnostic():
             spec = db.query(Spec).filter(Spec.model_name == asset.model_name).first()
 
             if not spec:
-                print(f"[SKIP] {asset.asset_id}: No manufacturer specs found.")
-                continue
+                # Fallback logic
+                if asset.device_type == "laptop":
+                    spec = db.query(Spec).filter(Spec.model_name == "Generic Laptop").first()
+                elif asset.device_type == "desktop":
+                    spec = db.query(Spec).filter(Spec.model_name == "Generic Desktop").first()
+                
+                if spec:
+                    asset.is_generic = True
+                else:
+                    print(f"[SKIP] {asset.asset_id}: No manufacturer specs found.")
+                    continue
 
             # Engineer features and predict
             features = engine.prepare_features(asset, spec)

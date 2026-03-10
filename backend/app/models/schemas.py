@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -20,7 +20,10 @@ class Asset(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     asset_id = Column(String, unique=True, index=True)
-    model_name = Column(String, ForeignKey("specs_library.model_name"))
+    # Removed ForeignKey to allow unknown models
+    model_name = Column(String, nullable=True)
+    device_type = Column(String, nullable=True) # Added device_type
+    is_generic = Column(Boolean, default=False) # Added is_generic for badge
 
     # Auto-Aging Logic: Store baseline, calc delta in logic layer
     initial_age = Column(Integer)
@@ -42,4 +45,5 @@ class Asset(Base):
 
     last_updated = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
-    spec = relationship("Spec")
+    # Explicit relationship definition since ForeignKey was removed
+    spec = relationship("Spec", primaryjoin="Asset.model_name == Spec.model_name", foreign_keys=[model_name], uselist=False, viewonly=True)

@@ -5,11 +5,15 @@ from datetime import datetime
 class AssetBase(BaseModel):
     asset_id: str
     model_name: str
+    device_type: Optional[str] = None # Added device_type
     initial_age: int
     current_temp: float
     current_usage: float
     maint_score: int
     repairs: int
+
+class AssetCreate(AssetBase):
+    last_updated: Optional[datetime] = None
 
 class AssetUpdate(BaseModel):
     """
@@ -34,6 +38,7 @@ class AssetResponse(AssetBase):
     current_age: Optional[int]
     override_score: Optional[str]
     override_reason: Optional[str]
+    is_generic: bool = False # Added is_generic
 
     class Config:
         from_attributes = True

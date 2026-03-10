@@ -13,14 +13,16 @@ class AssetBase(BaseModel):
 
 class AssetUpdate(BaseModel):
     """
-    Schema for updating asset data or applying manual overrides.
-    Required for the 'Manager Override' feature in Phase 3.
+    Schema for updating asset data (data correction) and applying manual overrides (label override).
     """
+    # Data Correction Fields
+    initial_age: Optional[int] = None
     current_temp: Optional[float] = None
     current_usage: Optional[float] = None
     maint_score: Optional[int] = None
     repairs: Optional[int] = None
-    health_score: Optional[str] = None
+
+    # Label Override Fields
     override_score: Optional[str] = None
     override_reason: Optional[str] = None
 

@@ -1,7 +1,7 @@
 import React from 'react';
-import { Monitor, Laptop, Edit2 } from 'lucide-react';
+import { Monitor, Laptop } from 'lucide-react';
 
-const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor, handleOverride }) => {
+const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor, onAssetClick }) => {
     return (
         <div className="bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-8 border-b border-slate-100 flex justify-between items-center">
@@ -25,7 +25,7 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
 
                     return (
                         <tr key={asset.id} className="hover:bg-slate-50/50 transition-colors group">
-                            <td className="px-8 py-6">
+                            <td className="px-8 py-6 cursor-pointer" onClick={() => onAssetClick(asset)}>
                                 <div className="flex items-center gap-4">
                                     <div className="p-3 bg-blue-50 text-blue-600 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-all duration-300">
                                         {asset.model_name.includes('OptiPlex') ? <Monitor size={20}/> : <Laptop size={20}/>}
@@ -61,22 +61,13 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
                                 </div>
                             </td>
                             <td className="px-8 py-6 text-right">
-                                <div className="flex items-center justify-end gap-2">
-                                    <button
-                                        onClick={() => handleOverride(asset.asset_id)}
-                                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                                        title="Manual Override"
-                                    >
-                                        <Edit2 size={16} />
-                                    </button>
-                                    <button
-                                        onClick={() => handleDiagnose(asset.asset_id)}
-                                        disabled={diagnosing === asset.asset_id}
-                                        className="px-6 py-2 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-600 transition-all disabled:opacity-50 shadow-lg shadow-slate-200 active:scale-95"
-                                    >
-                                        {diagnosing === asset.asset_id ? 'Analyzing...' : 'Diagnose'}
-                                    </button>
-                                </div>
+                                <button
+                                    onClick={() => handleDiagnose(asset.asset_id)}
+                                    disabled={diagnosing === asset.asset_id}
+                                    className="px-6 py-2 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-600 transition-all disabled:opacity-50 shadow-lg shadow-slate-200 active:scale-95"
+                                >
+                                    {diagnosing === asset.asset_id ? 'Analyzing...' : 'Diagnose'}
+                                </button>
                             </td>
                         </tr>
                     );

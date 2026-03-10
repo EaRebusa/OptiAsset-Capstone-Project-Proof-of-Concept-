@@ -24,6 +24,7 @@ import {
 import BulkUpload from './components/BulkUpload';
 import SystemConfig from './components/SystemConfig';
 import Inventory from './components/Inventory';
+import AssetDetailModal from './components/AssetDetailModal';
 
 // --- API SERVICE CONFIGURATION ---
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
@@ -66,11 +67,11 @@ const App = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [diagnosing, setDiagnosing] = useState(null);
     const [selectedAsset, setSelectedAsset] = useState(null);
+    const [isModalOpen, setIsModalOpen] = useState(false);
     const [activePieIndex, setActivePieIndex] = useState(null);
 
     // --- Effects ---
 
-    // Handle routing based on URL hash
     useEffect(() => {
         const handleHashChange = () => {
             const hash = window.location.hash.replace('#', '');
@@ -79,12 +80,11 @@ const App = () => {
             }
         };
         window.addEventListener('hashchange', handleHashChange);
-        handleHashChange(); // Initial check
+        handleHashChange();
 
         return () => window.removeEventListener('hashchange', handleHashChange);
     }, []);
 
-    // Handle search term changes with debounce
     useEffect(() => {
         const delayDebounceFn = setTimeout(() => {
             fetchAssets(searchTerm);
@@ -127,8 +127,6 @@ const App = () => {
             setIsBulkDiagnosing(true);
             setError(null);
             await api.post('/assets/bulk-diagnose');
-
-            // Refresh assets after a longer delay to allow backend processing
             setTimeout(() => {
                 fetchAssets(searchTerm).finally(() => {
                     setIsBulkDiagnosing(false);
@@ -141,10 +139,20 @@ const App = () => {
         }
     };
 
-    const handleOverride = (assetId) => {
-        const asset = assets.find(a => a.asset_id === assetId);
+    const handleSaveOverride = async (assetId, updateData) => {
+        try {
+            await api.patch(`/assets/${assetId}`, updateData);
+            setIsModalOpen(false);
+            await fetchAssets(searchTerm);
+        } catch (err) {
+            console.error("Override Save Failed:", err);
+            setError("Failed to save override.");
+        }
+    };
+
+    const handleAssetClick = (asset) => {
         setSelectedAsset(asset);
-        console.log("Overriding asset:", asset);
+        setIsModalOpen(true);
     };
 
     const handleTabChange = (tab) => {
@@ -187,7 +195,7 @@ const App = () => {
                 if (statusPriority[scoreA] !== statusPriority[scoreB]) {
                     return statusPriority[scoreA] - statusPriority[scoreB];
                 }
-                return b.current_age - a.current_age; // Secondary sort: oldest first
+                return b.current_age - a.current_age;
             })
             .slice(0, 4);
     }, [assets]);
@@ -262,7 +270,7 @@ const App = () => {
                                 </div>
                                 <div className="space-y-4">
                                     {atRiskAssets.map(asset => (
-                                        <div key={asset.id} className="group flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-100 hover:border-blue-200 transition-all cursor-pointer">
+                                        <div key={asset.id} onClick={() => handleAssetClick(asset)} className="group flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-100 hover:border-blue-200 transition-all cursor-pointer">
                                             <div className="flex items-center gap-4">
                                                 <div className={`p-3 rounded-xl ${getEffectiveHealthScore(asset) === 'Critical' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
                                                     {asset.model_name.includes('OptiPlex') ? <Monitor size={20}/> : <Laptop size={20}/>}
@@ -290,7 +298,7 @@ const App = () => {
                     </div>
                 );
             case 'inventory':
-                return <Inventory filteredAssets={filteredAssets} handleDiagnose={handleDiagnose} diagnosing={diagnosing} getStatusColor={getStatusColor} handleOverride={handleOverride} />;
+                return <Inventory filteredAssets={filteredAssets} handleDiagnose={handleDiagnose} diagnosing={diagnosing} getStatusColor={getStatusColor} onAssetClick={handleAssetClick} />;
             case 'upload':
                 return <BulkUpload />;
             case 'specs':
@@ -365,6 +373,14 @@ const App = () => {
                     )}
                 </div>
             </main>
+
+            {isModalOpen && selectedAsset && (
+                <AssetDetailModal
+                    asset={selectedAsset}
+                    onClose={() => setIsModalOpen(false)}
+                    onSave={handleSaveOverride}
+                />
+            )}
         </div>
     );
 };

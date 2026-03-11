@@ -3,27 +3,47 @@ TITLE OptiAsset Backend Server
 COLOR 0A
 
 :: --- Configuration ---
-:: Set the path to your virtual environment relative to this script
-:: Based on your input: ..\.venv
-SET VENV_PATH=..\.venv\Scripts\activate.bat
-
-:: Change directory to the folder containing this script
 cd /d "%~dp0"
 
 ECHO ========================================================
 ECHO      STARTING OPTIASSET BACKEND
 ECHO ========================================================
 
-:: 1. Activate Virtual Environment
-IF EXIST "%VENV_PATH%" (
-    ECHO [INFO] Activating Virtual Environment...
+:: 1. Virtual Environment Auto-Detection
+SET VENV_FOUND=0
+
+:: Check common locations relative to this script
+IF EXIST "backend\venv\Scripts\activate.bat" (
+    SET VENV_PATH=backend\venv\Scripts\activate.bat
+    SET VENV_FOUND=1
+) ELSE IF EXIST "backend\.venv\Scripts\activate.bat" (
+    SET VENV_PATH=backend\.venv\Scripts\activate.bat
+    SET VENV_FOUND=1
+) ELSE IF EXIST ".venv\Scripts\activate.bat" (
+    SET VENV_PATH=.venv\Scripts\activate.bat
+    SET VENV_FOUND=1
+) ELSE IF EXIST "venv\Scripts\activate.bat" (
+    SET VENV_PATH=venv\Scripts\activate.bat
+    SET VENV_FOUND=1
+)
+
+IF %VENV_FOUND%==1 (
+    ECHO [INFO] Found Virtual Environment: %VENV_PATH%
     CALL "%VENV_PATH%"
 ) ELSE (
-    ECHO [WARNING] Virtual environment not found at: %VENV_PATH%
+    ECHO [WARNING] No Virtual Environment detected in standard locations.
     ECHO [INFO] Attempting to run with global Python...
 )
 
-:: 2. Navigate to backend directory
+:: 2. Dependency Check & Installation (Optional but Safer)
+:: Checks if FastAPI is installed. If not, installs requirements.
+python -c "import fastapi" 2>NUL
+IF %ERRORLEVEL% NEQ 0 (
+    ECHO [WARNING] Core dependencies missing. Installing...
+    pip install -r backend/requirements.txt
+)
+
+:: 3. Navigate to backend directory
 IF EXIST "backend" (
     cd backend
 ) ELSE (
@@ -32,11 +52,15 @@ IF EXIST "backend" (
     EXIT /B 1
 )
 
-:: 3. Run Uvicorn
+:: 4. Run Uvicorn
 ECHO [INFO] Launching Uvicorn Server...
 ECHO [INFO] Server will be available at: http://127.0.0.1:8000
 ECHO.
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 :: Keep window open if it crashes
-PAUSE
+IF %ERRORLEVEL% NEQ 0 (
+    ECHO.
+    ECHO [ERROR] Server crashed or stopped unexpectedly.
+    PAUSE
+)

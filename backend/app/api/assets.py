@@ -7,37 +7,36 @@ import io
 from datetime import datetime
 from app.db.session import get_db, SessionLocal
 from app.models.schemas import Asset, Spec, SystemLog
-from app.schemas.asset import AssetResponse, AssetUpdate, AssetCreate, AssetBatchDelete
+from app.schemas.asset import AssetResponse, AssetUpdate, AssetCreate, AssetBatchDelete, AssetBatchSoftDelete
 from app.core.engine import engine
 
 router = APIRouter(prefix="/assets", tags=["Assets"])
 
 @router.get("/", response_model=List[AssetResponse])
-def get_assets(search: Optional[str] = None, db: Session = Depends(get_db)):
+def get_assets(search: Optional[str] = None, archived: bool = False, db: Session = Depends(get_db)):
     """
-    Fetches all assets with live age calculation.
-    Can be filtered by a search term, which can be a health status or a text search on asset ID/model name.
+    Fetches assets. Defaults to active assets.
+    Pass archived=True to fetch soft-deleted history.
     """
     query = db.query(Asset)
+    
+    # Filter by active status
+    if archived:
+        query = query.filter(Asset.is_active == False)
+    else:
+        query = query.filter(Asset.is_active == True)
     
     # Apply filtering logic
     if search:
         # Check if the search term matches any health status
         health_statuses = ["Healthy", "Warning", "Critical", "Unscored"]
         
-        # We need to construct a complex filter because "Healthy" could be in health_score OR override_score
         status_conditions = []
-        
-        # If the search term is exactly one of the known statuses, we prioritize filtering by status logic
         if search in health_statuses:
-            # Case 1: The asset has an override_score matching the search
             cond1 = Asset.override_score == search
-            # Case 2: The asset has NO override_score, but its computed health_score matches
             cond2 = and_(Asset.override_score == None, Asset.health_score == search)
-            
             query = query.filter(or_(cond1, cond2))
         else:
-            # General text search on ID or Model
             search_term = f"%{search}%"
             query = query.filter(
                 or_(
@@ -62,8 +61,11 @@ def create_asset(asset_in: AssetCreate, db: Session = Depends(get_db)):
     Creates a new asset manually.
     Handles device_type fallback if model is unknown.
     """
+    # Check if ID exists (including archived)
     existing_asset = db.query(Asset).filter(Asset.asset_id == asset_in.asset_id).first()
     if existing_asset:
+        if not existing_asset.is_active:
+             raise HTTPException(status_code=400, detail="Asset ID exists in archive. Restore it instead.")
         raise HTTPException(status_code=400, detail="Asset ID already exists")
 
     # Determine if we need to use a generic fallback
@@ -119,7 +121,8 @@ async def trigger_bulk_diagnostic(background_tasks: BackgroundTasks):
     def run_logic():
         db = SessionLocal()
         try:
-            assets = db.query(Asset).all()
+            # Only diagnose active assets
+            assets = db.query(Asset).filter(Asset.is_active == True).all()
             for asset in assets:
                 spec = db.query(Spec).filter(Spec.model_name == asset.model_name).first()
                 if not spec:
@@ -149,10 +152,9 @@ async def trigger_bulk_diagnostic(background_tasks: BackgroundTasks):
 def run_single_diagnostic(asset_id: str, db: Session = Depends(get_db)):
     """
     Triggers ML logic for a specific asset.
-    Required by App.jsx handleDiagnose function.
     """
     asset = db.query(Asset).filter(Asset.asset_id == asset_id).first()
-    if not asset:
+    if not asset or not asset.is_active:
         raise HTTPException(status_code=404, detail="Asset not found")
 
     spec = db.query(Spec).filter(Spec.model_name == asset.model_name).first()
@@ -191,11 +193,9 @@ async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
             logs.append({"status": "skipped", "message": "Row missing asset_id"})
             continue
 
-        # Try to parse the incoming timestamp
         incoming_ts = None
         if row.get('last_updated'):
             try:
-                # Handle both ISO format and simple date strings if necessary
                 incoming_ts = datetime.fromisoformat(row['last_updated'].replace('Z', '+00:00'))
             except ValueError:
                 pass 
@@ -203,24 +203,26 @@ async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
         existing_asset = db.query(Asset).filter(Asset.asset_id == asset_id).first()
 
         if existing_asset:
+            # If asset was archived, restore it? Or update it but keep it archived?
+            # Usually, a new upload implies active status.
+            if not existing_asset.is_active:
+                existing_asset.is_active = True
+                existing_asset.deletion_reason = None
+                logs.append({"status": "restored", "message": f"Asset {asset_id} restored from archive."})
+
             # Temporal Integrity Check
-            # Ensure both timestamps are timezone-aware or both are naive before comparing
             if existing_asset.last_updated and incoming_ts:
                 db_ts = existing_asset.last_updated
                 if db_ts.tzinfo is None:
-                    # If DB timestamp is naive, assume UTC
                     db_ts = db_ts.replace(tzinfo=datetime.utcnow().astimezone().tzinfo)
                 
                 if incoming_ts.tzinfo is None:
-                    # If incoming timestamp is naive, assume UTC
                     incoming_ts = incoming_ts.replace(tzinfo=datetime.utcnow().astimezone().tzinfo)
 
-                # If DB has a newer timestamp than the CSV, we skip this row.
                 if db_ts > incoming_ts:
                     logs.append({"status": "skipped", "message": f"Asset {asset_id}: Stale data (DB is newer)."})
                     continue
             
-            # Update existing asset
             existing_asset.current_temp = row.get('current_temp', existing_asset.current_temp)
             existing_asset.current_usage = row.get('current_usage', existing_asset.current_usage)
             existing_asset.maint_score = row.get('maint_score', existing_asset.maint_score)
@@ -230,11 +232,10 @@ async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
             logs.append({"status": "updated", "message": f"Asset {asset_id} updated."})
 
         else:
-            # Create new asset
             new_asset = Asset(
                 asset_id=asset_id,
                 model_name=row.get('model_name', 'Unknown Model'),
-                device_type=row.get('device_type'), # Added device_type
+                device_type=row.get('device_type'), 
                 initial_age=row.get('initial_age', 0),
                 current_temp=row.get('current_temp', 0.0),
                 current_usage=row.get('current_usage', 0.0),
@@ -252,7 +253,7 @@ async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
             action_type="UPLOAD",
             entity_type="ASSET",
             entity_id="BATCH",
-            details=f"Bulk upload processed {processed_count} records. Created/Updated assets."
+            details=f"Bulk upload processed {processed_count} records."
         )
         db.add(log)
 
@@ -261,7 +262,6 @@ async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
         return {"processed": processed_count, "logs": logs}
     except Exception as e:
         db.rollback()
-        # Log the actual error for debugging
         print(f"Bulk Upload Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Database Error: {str(e)}")
 
@@ -270,7 +270,7 @@ async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
 def update_asset(asset_id: str, obj_in: AssetUpdate, db: Session = Depends(get_db)):
     """Handles Manager Overrides (Human-in-the-loop)."""
     asset = db.query(Asset).filter(Asset.asset_id == asset_id).first()
-    if not asset:
+    if not asset or not asset.is_active:
         raise HTTPException(status_code=404, detail="Asset not found")
 
     update_data = obj_in.dict(exclude_unset=True)
@@ -296,50 +296,80 @@ def update_asset(asset_id: str, obj_in: AssetUpdate, db: Session = Depends(get_d
     return asset
 
 @router.delete("/{asset_id}")
-def delete_asset(asset_id: str, db: Session = Depends(get_db)):
+def delete_asset(asset_id: str, reason: str = "Manual Deletion", db: Session = Depends(get_db)):
     """
-    Deletes a single asset safely.
+    Soft-deletes a single asset (Archives it).
     """
     asset = db.query(Asset).filter(Asset.asset_id == asset_id).first()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
     
-    db.delete(asset)
+    asset.is_active = False
+    asset.deletion_reason = reason
     
     # Log Action
     log = SystemLog(
-        action_type="DELETE",
+        action_type="ARCHIVE",
         entity_type="ASSET",
         entity_id=asset_id,
-        details="Asset deleted manually."
+        details=f"Asset archived. Reason: {reason}"
     )
     db.add(log)
     
     db.commit()
-    return {"message": f"Asset {asset_id} deleted."}
+    return {"message": f"Asset {asset_id} archived."}
 
 @router.post("/batch-delete")
-def delete_assets_batch(payload: AssetBatchDelete, db: Session = Depends(get_db)):
+def delete_assets_batch(payload: AssetBatchSoftDelete, db: Session = Depends(get_db)):
     """
-    Deletes multiple assets safely.
+    Soft-deletes multiple assets (Archives them).
     """
     assets = db.query(Asset).filter(Asset.asset_id.in_(payload.asset_ids)).all()
     if not assets:
         raise HTTPException(status_code=404, detail="No matching assets found.")
     
-    deleted_count = 0
+    archived_count = 0
     for asset in assets:
-        db.delete(asset)
-        deleted_count += 1
+        if asset.is_active:
+            asset.is_active = False
+            asset.deletion_reason = payload.reason
+            archived_count += 1
     
     # Log Action
     log = SystemLog(
-        action_type="DELETE",
+        action_type="ARCHIVE",
         entity_type="ASSET",
         entity_id="BATCH",
-        details=f"Batch delete: {deleted_count} assets removed. IDs: {', '.join(payload.asset_ids[:5])}..."
+        details=f"Batch archive: {archived_count} assets hidden. Reason: {payload.reason}"
     )
     db.add(log)
     
     db.commit()
-    return {"message": f"{deleted_count} assets deleted."}
+    return {"message": f"{archived_count} assets archived."}
+
+@router.post("/{asset_id}/restore")
+def restore_asset(asset_id: str, db: Session = Depends(get_db)):
+    """
+    Restores a soft-deleted asset.
+    """
+    asset = db.query(Asset).filter(Asset.asset_id == asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    
+    if asset.is_active:
+        return {"message": "Asset is already active."}
+
+    asset.is_active = True
+    asset.deletion_reason = None
+    
+    # Log Action
+    log = SystemLog(
+        action_type="RESTORE",
+        entity_type="ASSET",
+        entity_id=asset_id,
+        details="Asset restored from archive."
+    )
+    db.add(log)
+    
+    db.commit()
+    return {"message": f"Asset {asset_id} restored."}

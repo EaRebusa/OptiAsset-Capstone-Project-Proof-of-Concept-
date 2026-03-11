@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Monitor, Laptop, Plus, Trash2, Edit2, Save, X, AlertTriangle, CheckCircle2, RefreshCw, BarChart3, Database, ShieldAlert, FileText, Clock, Activity, Calculator } from 'lucide-react';
+import { Monitor, Laptop, Plus, Trash2, Edit2, Save, X, AlertTriangle, CheckCircle2, RefreshCw, BarChart3, Database, ShieldAlert, FileText, Clock, Activity, Calculator, Archive, RotateCcw } from 'lucide-react';
 import axios from 'axios';
 import Tooltip from './Tooltip';
 
@@ -9,6 +9,7 @@ const SystemConfig = () => {
     const [specs, setSpecs] = useState([]);
     const [stats, setStats] = useState({ total_models: 0, generic_fallbacks: 0, fleet_coverage: 0 });
     const [logs, setLogs] = useState([]);
+    const [archivedAssets, setArchivedAssets] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [editingSpec, setEditingSpec] = useState(null);
@@ -19,14 +20,16 @@ const SystemConfig = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [specsRes, statsRes, logsRes] = await Promise.all([
+            const [specsRes, statsRes, logsRes, archivedRes] = await Promise.all([
                 axios.get(`${API_BASE_URL}/specs/`),
                 axios.get(`${API_BASE_URL}/specs/stats`),
-                axios.get(`${API_BASE_URL}/logs/?limit=20`)
+                axios.get(`${API_BASE_URL}/logs/?limit=20`),
+                axios.get(`${API_BASE_URL}/assets/?archived=true`)
             ]);
             setSpecs(specsRes.data);
             setStats(statsRes.data);
             setLogs(logsRes.data);
+            setArchivedAssets(archivedRes.data);
         } catch (error) {
             console.error("Failed to fetch config data:", error);
             showNotification('error', "Failed to load system configuration.");
@@ -74,6 +77,17 @@ const SystemConfig = () => {
         } catch (error) {
             console.error("Delete failed:", error);
             showNotification('error', error.response?.data?.detail || "Failed to delete spec.");
+        }
+    };
+
+    const handleRestoreAsset = async (assetId) => {
+        try {
+            await axios.post(`${API_BASE_URL}/assets/${assetId}/restore`);
+            showNotification('success', `Asset ${assetId} restored to active inventory.`);
+            fetchData();
+        } catch (error) {
+            console.error("Restore failed:", error);
+            showNotification('error', "Failed to restore asset.");
         }
     };
 
@@ -173,6 +187,55 @@ const SystemConfig = () => {
                 </div>
             </section>
 
+            {/* Inventory Archive Section */}
+            <section className="mb-12">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="p-2 bg-red-100 text-red-600 rounded-lg">
+                        <Archive size={20} />
+                    </div>
+                    <h3 className="text-xl font-black text-slate-800 uppercase tracking-wide">Inventory Archive (History)</h3>
+                </div>
+                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden h-72 flex flex-col">
+                    <div className="flex-1 overflow-y-auto custom-scrollbar">
+                        <table className="w-full text-left">
+                            <thead className="sticky top-0 bg-slate-50 border-b border-slate-100 shadow-sm">
+                                <tr className="text-xs font-black text-slate-400 uppercase tracking-wider">
+                                    <th className="p-6">Asset ID</th>
+                                    <th className="p-6">Model Name</th>
+                                    <th className="p-6">Reason for Archiving</th>
+                                    <th className="p-6 text-right">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {archivedAssets.length === 0 ? (
+                                    <tr>
+                                        <td colSpan="4" className="p-8 text-center text-slate-400 italic font-medium">
+                                            No archived assets found.
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    archivedAssets.map((asset) => (
+                                        <tr key={asset.id} className="hover:bg-slate-50/50 transition">
+                                            <td className="p-6 font-bold text-slate-800">{asset.asset_id}</td>
+                                            <td className="p-6 text-sm font-bold text-slate-500">{asset.model_name}</td>
+                                            <td className="p-6 text-sm italic text-slate-600">"{asset.deletion_reason}"</td>
+                                            <td className="p-6 text-right">
+                                                <button 
+                                                    onClick={() => handleRestoreAsset(asset.asset_id)}
+                                                    className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-slate-800 transition shadow-sm ml-auto"
+                                                >
+                                                    <RotateCcw size={14} /> Restore
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
             {/* Action Logs Section */}
             <section>
                 <div className="flex items-center gap-3 mb-6">
@@ -212,7 +275,8 @@ const SystemConfig = () => {
                                                 <span className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-wider
                                                     ${log.action_type === 'CREATE' ? 'bg-green-100 text-green-700' :
                                                       log.action_type === 'UPDATE' ? 'bg-blue-100 text-blue-700' :
-                                                      log.action_type === 'DELETE' ? 'bg-red-100 text-red-700' :
+                                                      log.action_type === 'DELETE' || log.action_type === 'ARCHIVE' ? 'bg-red-100 text-red-700' :
+                                                      log.action_type === 'RESTORE' ? 'bg-emerald-100 text-emerald-700' :
                                                       log.action_type === 'OVERRIDE' ? 'bg-purple-100 text-purple-700' :
                                                       'bg-slate-100 text-slate-700'}`}>
                                                     {log.action_type}

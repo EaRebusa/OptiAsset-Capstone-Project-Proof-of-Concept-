@@ -157,9 +157,10 @@ const App = () => {
         }
     };
 
-    const handleDeleteAsset = async (assetId) => {
+    const handleDeleteAsset = async (assetId, reason) => {
         try {
-            await api.delete(`/assets/${assetId}`);
+            // Pass reason as query param
+            await api.delete(`/assets/${assetId}`, { params: { reason } });
             await fetchAssets(searchTerm);
         } catch (err) {
             console.error("Delete Failed:", err);
@@ -167,9 +168,9 @@ const App = () => {
         }
     };
 
-    const handleBatchDeleteAssets = async (assetIds) => {
+    const handleBatchDeleteAssets = async (assetIds, reason) => {
         try {
-            await api.post('/assets/batch-delete', { asset_ids: assetIds });
+            await api.post('/assets/batch-delete', { asset_ids: assetIds, reason });
             await fetchAssets(searchTerm);
         } catch (err) {
             console.error("Batch Delete Failed:", err);

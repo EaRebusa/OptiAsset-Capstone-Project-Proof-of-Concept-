@@ -43,6 +43,10 @@ class Asset(Base):
     override_score = Column(String, nullable=True)
     override_reason = Column(String, nullable=True)
 
+    # Soft Deletion
+    is_active = Column(Boolean, default=True, index=True)
+    deletion_reason = Column(String, nullable=True)
+
     last_updated = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
     # Explicit relationship definition since ForeignKey was removed

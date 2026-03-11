@@ -33,6 +33,13 @@ class AssetUpdate(BaseModel):
 class AssetBatchDelete(BaseModel):
     asset_ids: List[str]
 
+class AssetSoftDelete(BaseModel):
+    reason: str
+
+class AssetBatchSoftDelete(BaseModel):
+    asset_ids: List[str]
+    reason: str
+
 class AssetResponse(AssetBase):
     id: int
     created_at: datetime
@@ -42,6 +49,8 @@ class AssetResponse(AssetBase):
     override_score: Optional[str]
     override_reason: Optional[str]
     is_generic: bool = False # Added is_generic
+    is_active: bool = True
+    deletion_reason: Optional[str] = None
 
     class Config:
         from_attributes = True

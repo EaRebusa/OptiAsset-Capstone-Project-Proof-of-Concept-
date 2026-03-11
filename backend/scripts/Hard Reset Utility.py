@@ -1,7 +1,9 @@
 import os
 import shutil
+import sys
 from pathlib import Path
 import subprocess
+import time
 
 def hard_reset():
     print("⚠️ [WARNING] Starting Hard Reset. All manual overrides and modifications will be lost.")
@@ -23,6 +25,8 @@ def hard_reset():
                 print(f"[CLEAN] Deleted {target}")
             except Exception as e:
                 print(f"[ERROR] Could not delete {target}: {e}")
+                print("🛑 CRITICAL: Database file is locked. Please STOP the running server (uvicorn) and try again.")
+                sys.exit(1) # Abort immediately
 
     # Clean potential script-local data directory (ghost files)
     if script_data_dir.exists():
@@ -34,6 +38,10 @@ def hard_reset():
                     print(f"[CLEAN] Deleted ghost file {target}")
                 except Exception as e:
                     print(f"[ERROR] Could not delete {target}: {e}")
+                    # Ghost files usually don't lock the main app, but good to warn
+    
+    # Wait a moment for file system to catch up
+    time.sleep(1)
 
     # 2. Sequential Re-run
     scripts = [
@@ -49,9 +57,14 @@ def hard_reset():
         result = subprocess.run(["python", script], capture_output=True, text=True, cwd=os.path.dirname(os.path.abspath(__file__)))
         if result.returncode == 0:
             print(f"[SUCCESS] {script} finished.")
-            print(result.stdout) # Print stdout to see progress
+            if "SUCCESS" in result.stdout: # print interesting stdout parts
+                 lines = result.stdout.split('\n')
+                 for line in lines:
+                     if "[SUCCESS]" in line:
+                         print(f"  > {line.strip()}")
         else:
             print(f"[ERROR] {script} failed!")
+            print(result.stdout)
             print(result.stderr)
             break
 

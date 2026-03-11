@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Monitor, Laptop, Filter, AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
+import { Monitor, Laptop, Filter, AlertTriangle, RefreshCw, Trash2, Archive } from 'lucide-react';
 import Tooltip from './Tooltip';
 
 const formatAge = (months) => {
@@ -47,14 +47,16 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
     };
 
     const handleDelete = (assetId) => {
-        if (window.confirm(`Are you sure you want to delete asset ${assetId}? This action cannot be undone.`)) {
-            onDelete(assetId);
+        const reason = window.prompt(`Archive asset ${assetId}? Please enter a reason:`, "Manual Deletion");
+        if (reason !== null) {
+            onDelete(assetId, reason);
         }
     };
 
     const handleBatchDelete = () => {
-        if (window.confirm(`Are you sure you want to delete ${selectedAssets.length} selected assets? This action cannot be undone.`)) {
-            onBatchDelete(selectedAssets);
+        const reason = window.prompt(`Archive ${selectedAssets.length} assets? Please enter a reason:`, "Batch Manual Deletion");
+        if (reason !== null) {
+            onBatchDelete(selectedAssets, reason);
             setSelectedAssets([]);
         }
     };
@@ -79,7 +81,7 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
                             onClick={handleBatchDelete}
                             className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-red-600 transition shadow-lg shadow-red-200"
                         >
-                            <Trash2 size={14} /> Delete ({selectedAssets.length})
+                            <Archive size={14} /> Archive ({selectedAssets.length})
                         </button>
                     )}
                 </div>
@@ -212,9 +214,9 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
                                         <button
                                             onClick={() => handleDelete(asset.asset_id)}
                                             className="p-2 text-slate-400 hover:text-red-500 transition-colors"
-                                            title="Delete Asset"
+                                            title="Archive Asset"
                                         >
-                                            <Trash2 size={16} />
+                                            <Archive size={16} />
                                         </button>
                                     </div>
                                 </td>

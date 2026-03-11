@@ -34,6 +34,7 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
         override_score: '',
         override_reason: ''
     });
+    const [error, setError] = useState('');
 
     const calculatedCurrentAge = useMemo(() => {
         if (!asset) return 0;
@@ -56,6 +57,7 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
                 override_reason: asset.override_reason || ''
             });
             setIsEditing(false);
+            setError('');
         }
     }, [asset]);
 
@@ -70,9 +72,46 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
             ...prev,
             [name]: value
         }));
+        // Clear error when user types
+        if (error) setError('');
+    };
+
+    const validateForm = () => {
+        const temp = parseFloat(formData.current_temp);
+        if (isNaN(temp) || temp < -10 || temp > 120) {
+            return "Temperature must be between -10°C and 120°C.";
+        }
+
+        const usage = parseFloat(formData.current_usage);
+        if (isNaN(usage) || usage < 0 || usage > 168) {
+            return "Usage must be between 0 and 168 hours/week.";
+        }
+
+        const maint = parseInt(formData.maint_score);
+        if (isNaN(maint) || maint < 0 || maint > 10) {
+            return "Maintenance Score must be between 0 and 10.";
+        }
+
+        const repairs = parseInt(formData.repairs);
+        if (isNaN(repairs) || repairs < 0) {
+            return "Repairs count cannot be negative.";
+        }
+        
+        const age = parseInt(formData.initial_age);
+        if (isNaN(age) || age < 0) {
+            return "Initial Age cannot be negative.";
+        }
+
+        return null;
     };
 
     const handleSave = () => {
+        const validationError = validateForm();
+        if (validationError) {
+            setError(validationError);
+            return;
+        }
+
         const payload = {
             initial_age: parseInt(formData.initial_age),
             repairs: parseInt(formData.repairs),
@@ -252,6 +291,15 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
                                     </div>
                                 )}
                             </div>
+                            
+                            {/* Validation Error Message */}
+                            {isEditing && error && (
+                                <div className="mt-4 p-3 bg-red-50 text-red-600 rounded-xl text-sm font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
+                                    <AlertCircle size={16} />
+                                    {error}
+                                </div>
+                            )}
+
                         </div>
                     </div>
                 </div>

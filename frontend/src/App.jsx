@@ -263,7 +263,7 @@ const App = () => {
                                 value={`₱${stats.risk.toLocaleString()}`} 
                                 icon={<DollarSign className="text-red-600"/>} 
                                 color="red" 
-                                subtext="Capital at Risk"
+                                subtext="Est. Capital at Risk (Replacement & Downtime)"
                                 onClick={() => handleFilterAndNavigate('Critical')}
                             />
                         </div>

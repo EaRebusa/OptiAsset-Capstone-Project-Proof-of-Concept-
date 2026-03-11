@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Upload, FileText, AlertTriangle, CheckCircle2, XCircle, RefreshCw, Plus, Save, X } from 'lucide-react';
+import { Upload, FileText, AlertTriangle, CheckCircle2, XCircle, RefreshCw, Plus, Save, X, Info } from 'lucide-react';
 import axios from 'axios';
 import Papa from 'papaparse';
 
@@ -8,11 +8,14 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
 const BulkUpload = () => {
     const [file, setFile] = useState(null);
     const [uploading, setUploading] = useState(false);
-    const [uploadStatus, setUploadStatus] = useState(null); // 'success', 'error', 'partial'
     const [logs, setLogs] = useState([]);
     const [autoDiagnose, setAutoDiagnose] = useState(false);
     const [showManualEntry, setShowManualEntry] = useState(false);
     const [isDragActive, setIsDragActive] = useState(false);
+    
+    // --- Confirmation Modal State ---
+    const [previewData, setPreviewData] = useState(null); // { new_assets, updated_assets, validRows }
+    const [showConfirmModal, setShowConfirmModal] = useState(false);
 
     // --- Manual Entry State ---
     const [manualEntry, setManualEntry] = useState({
@@ -29,65 +32,49 @@ const BulkUpload = () => {
     // --- Validation Logic ---
     const validateRow = (row) => {
         const errors = [];
-
-        // Type & Range Checks
         const temp = parseFloat(row.current_temp);
         if (isNaN(temp) || temp < 10 || temp > 120) {
             errors.push(`Invalid Temperature: ${row.current_temp} (Must be 10-120°C)`);
         }
-
         const usage = parseFloat(row.current_usage);
         if (isNaN(usage) || usage < 0 || usage > 168) {
             errors.push(`Invalid Usage: ${row.current_usage} (Must be 0-168 hrs/week)`);
         }
-
         const age = parseInt(row.initial_age);
         if (isNaN(age) || age < 0) {
             errors.push(`Invalid Age: ${row.initial_age}`);
         }
-
         const maint = parseInt(row.maint_score);
         if (isNaN(maint) || maint < 1 || maint > 10) {
             errors.push(`Invalid Maint Score: ${row.maint_score} (Must be 1-10)`);
         }
-
         return errors;
     };
 
-    // --- File Handling (Native Implementation) ---
-    const handleDragOver = (e) => {
-        e.preventDefault();
-        setIsDragActive(true);
-    };
-
-    const handleDragLeave = (e) => {
-        e.preventDefault();
-        setIsDragActive(false);
-    };
-
+    // --- File Handling ---
+    const handleDragOver = (e) => { e.preventDefault(); setIsDragActive(true); };
+    const handleDragLeave = (e) => { e.preventDefault(); setIsDragActive(false); };
     const handleDrop = (e) => {
         e.preventDefault();
         setIsDragActive(false);
         const droppedFile = e.dataTransfer.files[0];
         if (droppedFile && droppedFile.type === "text/csv") {
             setFile(droppedFile);
-            setUploadStatus(null);
             setLogs([]);
         } else {
             setLogs([{ type: 'error', message: 'Invalid file type. Please upload a CSV.' }]);
         }
     };
-
     const handleFileInput = (e) => {
         const selectedFile = e.target.files[0];
         if (selectedFile) {
             setFile(selectedFile);
-            setUploadStatus(null);
             setLogs([]);
         }
     };
 
-    const processFile = () => {
+    // --- Step 1: Parse & Preview ---
+    const initiateUploadProcess = () => {
         if (!file) return;
         setUploading(true);
         setLogs([]);
@@ -100,19 +87,15 @@ const BulkUpload = () => {
                 const validRows = [];
                 const skippedRows = [];
 
-                // Client-Side Validation
                 data.forEach((row, index) => {
-                    // Check for required headers
                     if (!row.asset_id || !row.model_name) {
                         skippedRows.push({ row: index + 2, reason: "Missing ID or Model" });
                         return;
                     }
-
                     const validationErrors = validateRow(row);
                     if (validationErrors.length > 0) {
                         skippedRows.push({ row: index + 2, reason: validationErrors.join(', ') });
                     } else {
-                        // Prepare for backend
                         validRows.push({
                             ...row,
                             initial_age: parseInt(row.initial_age),
@@ -120,61 +103,73 @@ const BulkUpload = () => {
                             maint_score: parseInt(row.maint_score || 5),
                             current_temp: parseFloat(row.current_temp),
                             current_usage: parseFloat(row.current_usage),
-                            // If CSV has a timestamp, pass it. If not, backend handles it.
                             last_updated: row.last_updated || new Date().toISOString()
                         });
                     }
                 });
 
-                // Send valid rows to backend
-                if (validRows.length > 0) {
-                    try {
-                        const response = await axios.post(`${API_BASE_URL}/assets/bulk-upload`, validRows);
-
-                        // Combine backend results with client-side skips
-                        const backendLogs = response.data.logs || [];
-                        const allLogs = [
-                            ...skippedRows.map(s => ({ type: 'error', message: `Row ${s.row}: ${s.reason}` })),
-                            ...backendLogs.map(l => ({ type: l.status === 'skipped' ? 'warning' : 'success', message: l.message }))
-                        ];
-
-                        setLogs(allLogs);
-                        setUploadStatus(allLogs.some(l => l.type === 'error') ? 'partial' : 'success');
-                        
-                        // Clear file on full success to allow new upload
-                        if (!allLogs.some(l => l.type === 'error')) setFile(null);
-
-                        if (autoDiagnose) {
-                            await axios.post(`${API_BASE_URL}/assets/bulk-diagnose`);
-                            setLogs(prev => [...prev, { type: 'info', message: 'Auto-Diagnosis Triggered Successfully.' }]);
-                        }
-
-                    } catch (err) {
-                        console.error(err);
-                        setUploadStatus('error');
-                        setLogs([{ type: 'error', message: 'Server Error: Failed to process batch.' }]);
-                    }
-                } else {
-                    setUploadStatus('error');
-                    setLogs(skippedRows.map(s => ({ type: 'error', message: `Row ${s.row}: ${s.reason}` })));
+                if (skippedRows.length > 0) {
+                     setLogs(prev => [
+                         ...prev, 
+                         ...skippedRows.map(s => ({ type: 'error', message: `Row ${s.row}: ${s.reason}` }))
+                     ]);
                 }
 
+                if (validRows.length > 0) {
+                    try {
+                        // DRY RUN / PREVIEW
+                        const previewRes = await axios.post(`${API_BASE_URL}/assets/bulk-upload-preview`, validRows);
+                        setPreviewData({
+                            ...previewRes.data,
+                            validRows: validRows
+                        });
+                        setShowConfirmModal(true);
+                    } catch (err) {
+                        setLogs(prev => [...prev, { type: 'error', message: 'Server Error: Failed to generate preview.' }]);
+                    }
+                } else {
+                    setLogs(prev => [...prev, { type: 'error', message: 'No valid rows found to process.' }]);
+                }
                 setUploading(false);
             },
             error: (err) => {
-                setUploadStatus('error');
                 setLogs([{ type: 'error', message: `CSV Parsing Error: ${err.message}` }]);
                 setUploading(false);
             }
         });
     };
 
+    // --- Step 2: Confirm & Upload ---
+    const confirmUpload = async () => {
+        setShowConfirmModal(false);
+        setUploading(true);
+        
+        try {
+            const response = await axios.post(`${API_BASE_URL}/assets/bulk-upload`, previewData.validRows);
+            
+            const backendLogs = response.data.logs || [];
+            const newLogs = backendLogs.map(l => ({ type: l.status === 'skipped' ? 'warning' : 'success', message: l.message }));
+            
+            setLogs(prev => [...prev, ...newLogs]);
+            
+            if (!newLogs.some(l => l.type === 'error')) setFile(null);
+
+            if (autoDiagnose) {
+                await axios.post(`${API_BASE_URL}/assets/bulk-diagnose`);
+                setLogs(prev => [...prev, { type: 'info', message: 'Auto-Diagnosis Triggered Successfully.' }]);
+            }
+        } catch (err) {
+            setLogs(prev => [...prev, { type: 'error', message: 'Server Error: Final upload failed.' }]);
+        } finally {
+            setUploading(false);
+            setPreviewData(null);
+        }
+    };
+
     // --- Manual Entry Handling ---
     const handleManualSubmit = async (e) => {
         e.preventDefault();
         setUploading(true);
-
-        // Basic Validation
         const errors = validateRow(manualEntry);
         if (errors.length > 0) {
             setLogs(errors.map(err => ({ type: 'error', message: err })));
@@ -201,10 +196,8 @@ const BulkUpload = () => {
             setShowManualEntry(false);
 
             if (autoDiagnose) {
-                // Encode the ID to handle special characters (like /, ?, #) safely
                 await axios.post(`${API_BASE_URL}/assets/${encodeURIComponent(payload.asset_id)}/diagnose`);
             }
-
         } catch (err) {
             setLogs([{ type: 'error', message: 'Failed to add asset. ID might already exist.' }]);
         } finally {
@@ -213,7 +206,7 @@ const BulkUpload = () => {
     };
 
     return (
-        <div className="max-w-5xl mx-auto">
+        <div className="max-w-5xl mx-auto relative">
             <div className="flex justify-between items-center mb-8">
                 <div>
                     <h2 className="text-3xl font-black text-slate-800 tracking-tight">Ingestion Gateway</h2>
@@ -307,12 +300,12 @@ const BulkUpload = () => {
                                 </div>
                             </div>
                             <button
-                                onClick={processFile}
+                                onClick={initiateUploadProcess}
                                 disabled={uploading}
                                 className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold uppercase tracking-wider hover:bg-blue-700 transition shadow-lg shadow-blue-200 disabled:opacity-50 flex items-center gap-2"
                             >
                                 {uploading && <RefreshCw className="animate-spin" size={16} />}
-                                {uploading ? 'Processing...' : 'Upload & Process'}
+                                {uploading ? 'Processing...' : 'Review & Upload'}
                             </button>
                         </div>
                     )}
@@ -366,6 +359,56 @@ const BulkUpload = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Confirmation Modal */}
+            {showConfirmModal && previewData && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-8 border-b border-slate-100">
+                            <h3 className="text-2xl font-black text-slate-800">Confirm Upload</h3>
+                            <p className="text-slate-500 mt-2">Please review the summary before proceeding.</p>
+                        </div>
+                        <div className="p-8 space-y-6">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="p-4 bg-green-50 border border-green-100 rounded-2xl text-center">
+                                    <p className="text-3xl font-black text-green-600">{previewData.new_assets}</p>
+                                    <p className="text-xs font-bold text-green-800 uppercase tracking-wide">New Assets</p>
+                                </div>
+                                <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl text-center">
+                                    <p className="text-3xl font-black text-amber-600">{previewData.updated_assets}</p>
+                                    <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Updates</p>
+                                </div>
+                            </div>
+                            
+                            {previewData.updated_assets > 0 && (
+                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                    <div className="flex items-center gap-2 mb-2 text-amber-600 font-bold text-sm">
+                                        <Info size={16} />
+                                        <span>Existing Assets Found</span>
+                                    </div>
+                                    <p className="text-xs text-slate-500">
+                                        {previewData.updated_assets} existing assets will be updated with the new telemetry data from this CSV.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                        <div className="p-6 bg-slate-50 flex justify-end gap-3">
+                            <button 
+                                onClick={() => setShowConfirmModal(false)}
+                                className="px-6 py-3 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={confirmUpload}
+                                className="px-6 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition shadow-lg shadow-slate-300"
+                            >
+                                Confirm & Process
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

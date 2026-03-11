@@ -17,7 +17,8 @@ import {
     Search,
     XCircle,
     DollarSign,
-    WifiOff
+    WifiOff,
+    FileBarChart
 } from 'lucide-react';
 import {
     PieChart, Pie, Cell, ResponsiveContainer,
@@ -27,6 +28,7 @@ import BulkUpload from './components/BulkUpload';
 import SystemConfig from './components/SystemConfig';
 import Inventory from './components/Inventory';
 import AssetDetailModal from './components/AssetDetailModal';
+import Reporting from './components/Reporting';
 
 // --- API SERVICE CONFIGURATION ---
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
@@ -82,7 +84,7 @@ const App = () => {
     useEffect(() => {
         const handleHashChange = () => {
             const hash = window.location.hash.replace('#', '');
-            if (['dashboard', 'inventory', 'upload', 'specs'].includes(hash)) {
+            if (['dashboard', 'inventory', 'upload', 'specs', 'reports'].includes(hash)) {
                 setActiveTab(hash);
             }
         };
@@ -414,6 +416,8 @@ const App = () => {
                 return <BulkUpload />;
             case 'specs':
                 return <SystemConfig />;
+            case 'reports':
+                return <Reporting />;
             default:
                 return null;
         }
@@ -432,6 +436,7 @@ const App = () => {
                     <NavItem icon={<LayoutDashboard size={20}/>} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => handleTabChange('dashboard')} />
                     <NavItem icon={<Package size={20}/>} label="Inventory" active={activeTab === 'inventory'} onClick={() => handleTabChange('inventory')} />
                     <NavItem icon={<Upload size={20}/>} label="Bulk Upload" active={activeTab === 'upload'} onClick={() => handleTabChange('upload')} />
+                    <NavItem icon={<FileBarChart size={20}/>} label="Reporting" active={activeTab === 'reports'} onClick={() => handleTabChange('reports')} />
                     <NavItem icon={<Settings size={20}/>} label="System Config" active={activeTab === 'specs'} onClick={() => handleTabChange('specs')} />
                 </div>
                 <div className="p-4 border-t border-slate-800 bg-slate-900/50">

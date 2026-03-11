@@ -50,6 +50,10 @@ def get_assets(search: Optional[str] = None, db: Session = Depends(get_db)):
     # Calculate current age dynamically for display
     for a in assets:
         a.current_age = engine.calculate_current_age(a.initial_age, a.created_at)
+        # Ensure device_type is populated for frontend visual identity
+        if not a.device_type and a.spec:
+            a.device_type = a.spec.device_type
+
     return assets
 
 @router.post("/", response_model=AssetResponse)

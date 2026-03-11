@@ -87,17 +87,20 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
                         const effectiveScore = getEffectiveScore(asset);
                         const isOverridden = !!asset.override_score;
                         const isOutOfWarranty = asset.current_age > 36;
-
-                        // Telemetry Delta Logic (Mocked for now as we don't have historical data in this view)
-                        // In a real app, we'd compare against previous sync data.
                         const tempRising = asset.current_temp > 75; 
+                        
+                        // Robust Device Type Check
+                        const isDesktop = asset.device_type === 'desktop' || 
+                                          asset.model_name.toLowerCase().includes('desktop') || 
+                                          asset.model_name.includes('OptiPlex') || 
+                                          asset.model_name.includes('ProDesk');
 
                         return (
                             <tr key={asset.id} className="hover:bg-slate-50/50 transition-colors group">
                                 <td className="px-8 py-6 cursor-pointer" onClick={() => onAssetClick(asset)}>
                                     <div className="flex items-center gap-4">
-                                        <div className="p-3 bg-blue-50 text-blue-600 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-all duration-300">
-                                            {asset.model_name.includes('OptiPlex') ? <Monitor size={20}/> : <Laptop size={20}/>}
+                                        <div className={`p-3 rounded-xl transition-all duration-300 ${isDesktop ? 'bg-purple-50 text-purple-600 group-hover:bg-purple-600 group-hover:text-white' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'}`}>
+                                            {isDesktop ? <Monitor size={20}/> : <Laptop size={20}/>}
                                         </div>
                                         <div>
                                             <p className="font-black text-slate-800 text-lg leading-none">{asset.asset_id}</p>

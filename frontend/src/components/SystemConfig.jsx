@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Monitor, Laptop, Plus, Trash2, Edit2, Save, X, AlertTriangle, CheckCircle2, RefreshCw, BarChart3, Database, ShieldAlert } from 'lucide-react';
+import { Monitor, Laptop, Plus, Trash2, Edit2, Save, X, AlertTriangle, CheckCircle2, RefreshCw, BarChart3, Database, ShieldAlert, FileText, Clock, Activity } from 'lucide-react';
 import axios from 'axios';
 import Tooltip from './Tooltip';
 
@@ -8,6 +8,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
 const SystemConfig = () => {
     const [specs, setSpecs] = useState([]);
     const [stats, setStats] = useState({ total_models: 0, generic_fallbacks: 0, fleet_coverage: 0 });
+    const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [editingSpec, setEditingSpec] = useState(null);
@@ -18,12 +19,14 @@ const SystemConfig = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [specsRes, statsRes] = await Promise.all([
+            const [specsRes, statsRes, logsRes] = await Promise.all([
                 axios.get(`${API_BASE_URL}/specs/`),
-                axios.get(`${API_BASE_URL}/specs/stats`)
+                axios.get(`${API_BASE_URL}/specs/stats`),
+                axios.get(`${API_BASE_URL}/logs/?limit=20`)
             ]);
             setSpecs(specsRes.data);
             setStats(statsRes.data);
+            setLogs(logsRes.data);
         } catch (error) {
             console.error("Failed to fetch config data:", error);
             showNotification('error', "Failed to load system configuration.");
@@ -154,7 +157,7 @@ const SystemConfig = () => {
             </section>
 
             {/* Manufacturer Specs Library */}
-            <section>
+            <section className="mb-12">
                 <div className="flex items-center gap-3 mb-6">
                     <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
                         <Database size={20} />
@@ -167,6 +170,71 @@ const SystemConfig = () => {
                         onEdit={(spec) => { setEditingSpec(spec); setShowModal(true); }}
                         onDelete={(model_name) => setShowDeleteConfirm(model_name)}
                     />
+                </div>
+            </section>
+
+            {/* Action Logs Section */}
+            <section>
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="p-2 bg-slate-100 text-slate-600 rounded-lg">
+                        <Activity size={20} />
+                    </div>
+                    <h3 className="text-xl font-black text-slate-800 uppercase tracking-wide">Action Logs</h3>
+                </div>
+                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden h-96 flex flex-col">
+                    <div className="flex-1 overflow-y-auto custom-scrollbar">
+                        <table className="w-full text-left">
+                            <thead className="sticky top-0 bg-slate-50 border-b border-slate-100 shadow-sm">
+                                <tr className="text-xs font-black text-slate-400 uppercase tracking-wider">
+                                    <th className="p-6 w-48">Timestamp</th>
+                                    <th className="p-6 w-32">Action</th>
+                                    <th className="p-6 w-40">Entity</th>
+                                    <th className="p-6">Details</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {logs.length === 0 ? (
+                                    <tr>
+                                        <td colSpan="4" className="p-8 text-center text-slate-400 italic font-medium">
+                                            No recent activity.
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    logs.map((log) => (
+                                        <tr key={log.id} className="hover:bg-slate-50/50 transition">
+                                            <td className="p-6 text-xs font-bold text-slate-500 whitespace-nowrap">
+                                                <div className="flex items-center gap-2">
+                                                    <Clock size={14} className="text-slate-400" />
+                                                    {new Date(log.timestamp).toLocaleString()}
+                                                </div>
+                                            </td>
+                                            <td className="p-6">
+                                                <span className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-wider
+                                                    ${log.action_type === 'CREATE' ? 'bg-green-100 text-green-700' :
+                                                      log.action_type === 'UPDATE' ? 'bg-blue-100 text-blue-700' :
+                                                      log.action_type === 'DELETE' ? 'bg-red-100 text-red-700' :
+                                                      log.action_type === 'OVERRIDE' ? 'bg-purple-100 text-purple-700' :
+                                                      'bg-slate-100 text-slate-700'}`}>
+                                                    {log.action_type}
+                                                </span>
+                                            </td>
+                                            <td className="p-6">
+                                                <div className="flex flex-col">
+                                                    <span className="text-xs font-bold text-slate-400 uppercase">{log.entity_type}</span>
+                                                    <span className="text-sm font-bold text-slate-800 truncate max-w-[150px]" title={log.entity_id}>
+                                                        {log.entity_id}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                            <td className="p-6 text-sm font-medium text-slate-600">
+                                                {log.details}
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
 

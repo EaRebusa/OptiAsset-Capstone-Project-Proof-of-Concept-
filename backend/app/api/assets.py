@@ -6,7 +6,7 @@ import pandas as pd
 import io
 from datetime import datetime
 from app.db.session import get_db, SessionLocal
-from app.models.schemas import Asset, Spec
+from app.models.schemas import Asset, Spec, SystemLog
 from app.schemas.asset import AssetResponse, AssetUpdate, AssetCreate
 from app.core.engine import engine
 
@@ -90,6 +90,16 @@ def create_asset(asset_in: AssetCreate, db: Session = Depends(get_db)):
     )
     
     db.add(new_asset)
+    
+    # Log Action
+    log = SystemLog(
+        action_type="CREATE",
+        entity_type="ASSET",
+        entity_id=new_asset.asset_id,
+        details=f"Manual creation. Model: {new_asset.model_name}, Generic: {new_asset.is_generic}"
+    )
+    db.add(log)
+    
     try:
         db.commit()
         db.refresh(new_asset)
@@ -233,6 +243,15 @@ async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
 
         processed_count += 1
 
+    if processed_count > 0:
+        log = SystemLog(
+            action_type="UPLOAD",
+            entity_type="ASSET",
+            entity_id="BATCH",
+            details=f"Bulk upload processed {processed_count} records. Created/Updated assets."
+        )
+        db.add(log)
+
     try:
         db.commit()
         return {"processed": processed_count, "logs": logs}
@@ -253,6 +272,19 @@ def update_asset(asset_id: str, obj_in: AssetUpdate, db: Session = Depends(get_d
     update_data = obj_in.dict(exclude_unset=True)
     for field, value in update_data.items():
         setattr(asset, field, value)
+
+    # Log Action
+    details = []
+    if obj_in.override_score:
+         details.append(f"Override: {obj_in.override_score} ({obj_in.override_reason})")
+    
+    log = SystemLog(
+        action_type="UPDATE",
+        entity_type="ASSET",
+        entity_id=asset_id,
+        details=f"Asset updated. {', '.join(details)}" if details else "Asset data updated."
+    )
+    db.add(log)
 
     db.commit()
     db.refresh(asset)

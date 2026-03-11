@@ -47,3 +47,14 @@ class Asset(Base):
 
     # Explicit relationship definition since ForeignKey was removed
     spec = relationship("Spec", primaryjoin="Asset.model_name == Spec.model_name", foreign_keys=[model_name], uselist=False, viewonly=True)
+
+class SystemLog(Base):
+    """Audit trail for tracking critical system actions."""
+    __tablename__ = "system_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    action_type = Column(String, index=True) # CREATE, UPDATE, DELETE, OVERRIDE, UPLOAD
+    entity_type = Column(String, index=True) # SPEC, ASSET
+    entity_id = Column(String, index=True)   # Model Name or Asset ID
+    details = Column(String)                 # Description of the change

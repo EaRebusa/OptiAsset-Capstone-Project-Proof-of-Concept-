@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Monitor, Laptop, Plus, Trash2, Edit2, Save, X, AlertTriangle, CheckCircle2, RefreshCw, BarChart3, Database, ShieldAlert, FileText, Clock, Activity } from 'lucide-react';
+import { Monitor, Laptop, Plus, Trash2, Edit2, Save, X, AlertTriangle, CheckCircle2, RefreshCw, BarChart3, Database, ShieldAlert, FileText, Clock, Activity, Calculator } from 'lucide-react';
 import axios from 'axios';
 import Tooltip from './Tooltip';
 
@@ -367,6 +367,22 @@ const SpecModal = ({ spec, onClose, onSave }) => {
         warranty_months: spec?.warranty_months || ''
     });
 
+    // Temp Calculation State
+    const [showTempCalc, setShowTempCalc] = useState(false);
+    const [tempRange, setTempRange] = useState({ min: '', max: '' });
+
+    // Auto-calculate average when range changes
+    useEffect(() => {
+        if (tempRange.min && tempRange.max) {
+            const min = parseFloat(tempRange.min);
+            const max = parseFloat(tempRange.max);
+            if (!isNaN(min) && !isNaN(max)) {
+                const avg = (min + max) / 2;
+                setFormData(prev => ({ ...prev, temp_norm: avg.toFixed(1) }));
+            }
+        }
+    }, [tempRange]);
+
     const handleChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
     };
@@ -441,16 +457,51 @@ const SpecModal = ({ spec, onClose, onSave }) => {
 
                     <div className="grid grid-cols-3 gap-4">
                         <div>
-                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Temp Norm (°C)</label>
-                            <input 
-                                type="number" 
-                                name="temp_norm"
-                                value={formData.temp_norm}
-                                onChange={handleChange}
-                                step="0.1"
-                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
-                                required
-                            />
+                            <div className="flex justify-between items-center mb-2">
+                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Temp Norm (°C)</label>
+                                <button 
+                                    type="button"
+                                    onClick={() => setShowTempCalc(!showTempCalc)}
+                                    className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-700 uppercase tracking-wider"
+                                >
+                                    <Calculator size={10} />
+                                    {showTempCalc ? 'Manual' : 'Calc'}
+                                </button>
+                            </div>
+                            
+                            {showTempCalc ? (
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="number" 
+                                        placeholder="Min"
+                                        value={tempRange.min}
+                                        onChange={e => setTempRange({...tempRange, min: e.target.value})}
+                                        className="w-1/2 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    <input 
+                                        type="number" 
+                                        placeholder="Max"
+                                        value={tempRange.max}
+                                        onChange={e => setTempRange({...tempRange, max: e.target.value})}
+                                        className="w-1/2 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+                            ) : (
+                                <input 
+                                    type="number" 
+                                    name="temp_norm"
+                                    value={formData.temp_norm}
+                                    onChange={handleChange}
+                                    step="0.1"
+                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                                    required
+                                />
+                            )}
+                            {showTempCalc && formData.temp_norm && (
+                                <p className="mt-1 text-[10px] text-slate-500 font-medium text-center">
+                                    Avg: <span className="font-bold text-slate-800">{formData.temp_norm}°C</span>
+                                </p>
+                            )}
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Usage Norm (Hrs)</label>

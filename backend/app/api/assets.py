@@ -219,6 +219,37 @@ def run_single_diagnostic(asset_id: str, db: Session = Depends(get_db)):
     db.commit()
     return {"asset_id": asset_id, "score": label, "cluster": cid}
 
+@router.post("/bulk-upload-preview")
+async def bulk_upload_preview(data: List[dict], db: Session = Depends(get_db)):
+    """
+    Dry run for bulk upload. Checks for existing assets and potential updates.
+    Returns summary stats without modifying the database.
+    """
+    new_count = 0
+    update_count = 0
+    updates = [] # List of {asset_id, changes: [field1, field2]}
+
+    for row in data:
+        asset_id = row.get('asset_id')
+        if not asset_id:
+            continue
+
+        existing_asset = db.query(Asset).filter(Asset.asset_id == asset_id).first()
+
+        if existing_asset:
+            update_count += 1
+            # Ideally we could list changed fields here, but for now just knowing it's an update is good
+            updates.append({"asset_id": asset_id, "status": "exists"})
+        else:
+            new_count += 1
+    
+    return {
+        "new_assets": new_count,
+        "updated_assets": update_count,
+        "total_processed": new_count + update_count,
+        "details": updates
+    }
+
 @router.post("/bulk-upload")
 async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
     """

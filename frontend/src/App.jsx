@@ -157,6 +157,26 @@ const App = () => {
         }
     };
 
+    const handleDeleteAsset = async (assetId) => {
+        try {
+            await api.delete(`/assets/${assetId}`);
+            await fetchAssets(searchTerm);
+        } catch (err) {
+            console.error("Delete Failed:", err);
+            setError("Failed to delete asset.");
+        }
+    };
+
+    const handleBatchDeleteAssets = async (assetIds) => {
+        try {
+            await api.post('/assets/batch-delete', { asset_ids: assetIds });
+            await fetchAssets(searchTerm);
+        } catch (err) {
+            console.error("Batch Delete Failed:", err);
+            setError("Failed to delete selected assets.");
+        }
+    };
+
     const handleAssetClick = (asset) => {
         setSelectedAsset(asset);
         setIsModalOpen(true);
@@ -386,6 +406,8 @@ const App = () => {
                     getStatusColor={getStatusColor} 
                     onAssetClick={handleAssetClick} 
                     loading={loading}
+                    onDelete={handleDeleteAsset}
+                    onBatchDelete={handleBatchDeleteAssets}
                 />;
             case 'upload':
                 return <BulkUpload />;

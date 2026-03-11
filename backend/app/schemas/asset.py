@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 class AssetBase(BaseModel):
@@ -29,6 +29,9 @@ class AssetUpdate(BaseModel):
     # Label Override Fields
     override_score: Optional[str] = None
     override_reason: Optional[str] = None
+
+class AssetBatchDelete(BaseModel):
+    asset_ids: List[str]
 
 class AssetResponse(AssetBase):
     id: int

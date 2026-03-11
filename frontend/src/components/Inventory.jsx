@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Monitor, Laptop, Filter, AlertTriangle, RefreshCw } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Monitor, Laptop, Filter, AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
 import Tooltip from './Tooltip';
 
 const formatAge = (months) => {
@@ -11,13 +11,14 @@ const formatAge = (months) => {
     return `${years}y ${remainingMonths}m`;
 };
 
-const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor, onAssetClick, loading }) => {
+const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor, onAssetClick, loading, onDelete, onBatchDelete }) => {
     const [filterStatus, setFilterStatus] = useState('All');
     const [filterAge, setFilterAge] = useState(false);
+    const [selectedAssets, setSelectedAssets] = useState([]);
 
     const getEffectiveScore = (asset) => asset.override_score || asset.health_score;
 
-    const displayedAssets = filteredAssets.filter(asset => {
+    const displayedAssets = useMemo(() => filteredAssets.filter(asset => {
         const matchesStatus = filterStatus === 'All' 
             ? true 
             : filterStatus === 'Overridden' 
@@ -27,7 +28,36 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
         const matchesAge = filterAge ? asset.current_age > 36 : true;
 
         return matchesStatus && matchesAge;
-    });
+    }), [filteredAssets, filterStatus, filterAge]);
+
+    const handleSelect = (assetId) => {
+        setSelectedAssets(prev => 
+            prev.includes(assetId) 
+                ? prev.filter(id => id !== assetId) 
+                : [...prev, assetId]
+        );
+    };
+
+    const handleSelectAll = (e) => {
+        if (e.target.checked) {
+            setSelectedAssets(displayedAssets.map(a => a.asset_id));
+        } else {
+            setSelectedAssets([]);
+        }
+    };
+
+    const handleDelete = (assetId) => {
+        if (window.confirm(`Are you sure you want to delete asset ${assetId}? This action cannot be undone.`)) {
+            onDelete(assetId);
+        }
+    };
+
+    const handleBatchDelete = () => {
+        if (window.confirm(`Are you sure you want to delete ${selectedAssets.length} selected assets? This action cannot be undone.`)) {
+            onBatchDelete(selectedAssets);
+            setSelectedAssets([]);
+        }
+    };
 
     if (loading) {
         return (
@@ -44,6 +74,14 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
                 <div className="flex items-center gap-4">
                     <h3 className="text-xl font-black text-slate-800 tracking-tight">Active Inventory</h3>
                     <span className="px-4 py-1.5 bg-slate-100 text-slate-500 rounded-full text-xs font-black uppercase tracking-widest">{displayedAssets.length} Units</span>
+                    {selectedAssets.length > 0 && (
+                        <button 
+                            onClick={handleBatchDelete}
+                            className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-red-600 transition shadow-lg shadow-red-200"
+                        >
+                            <Trash2 size={14} /> Delete ({selectedAssets.length})
+                        </button>
+                    )}
                 </div>
                 
                 <div className="flex items-center gap-3">
@@ -75,6 +113,14 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
                 <table className="w-full text-left">
                     <thead className="bg-slate-50/50 text-slate-400 text-[10px] uppercase tracking-[0.2em] font-black border-b border-slate-100">
                     <tr>
+                        <th className="px-8 py-5 w-12">
+                            <input 
+                                type="checkbox"
+                                onChange={handleSelectAll}
+                                checked={selectedAssets.length > 0 && selectedAssets.length === displayedAssets.length}
+                                className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                            />
+                        </th>
                         <th className="px-8 py-5">Device Identity</th>
                         <th className="px-8 py-5">Life Cycle</th>
                         <th className="px-8 py-5">Telemetry</th>
@@ -89,14 +135,21 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
                         const isOutOfWarranty = asset.current_age > 36;
                         const tempRising = asset.current_temp > 75; 
                         
-                        // Robust Device Type Check
                         const isDesktop = asset.device_type === 'desktop' || 
                                           asset.model_name.toLowerCase().includes('desktop') || 
                                           asset.model_name.includes('OptiPlex') || 
                                           asset.model_name.includes('ProDesk');
 
                         return (
-                            <tr key={asset.id} className="hover:bg-slate-50/50 transition-colors group">
+                            <tr key={asset.id} className={`hover:bg-slate-50/50 transition-colors group ${selectedAssets.includes(asset.asset_id) ? 'bg-blue-50' : ''}`}>
+                                <td className="px-8 py-6">
+                                    <input 
+                                        type="checkbox"
+                                        checked={selectedAssets.includes(asset.asset_id)}
+                                        onChange={() => handleSelect(asset.asset_id)}
+                                        className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                                    />
+                                </td>
                                 <td className="px-8 py-6 cursor-pointer" onClick={() => onAssetClick(asset)}>
                                     <div className="flex items-center gap-4">
                                         <div className={`p-3 rounded-xl transition-all duration-300 ${isDesktop ? 'bg-purple-50 text-purple-600 group-hover:bg-purple-600 group-hover:text-white' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'}`}>
@@ -148,20 +201,29 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
                                     </div>
                                 </td>
                                 <td className="px-8 py-6 text-right">
-                                    <button
-                                        onClick={() => handleDiagnose(asset.asset_id)}
-                                        disabled={diagnosing === asset.asset_id}
-                                        className="px-6 py-2 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-600 transition-all disabled:opacity-50 shadow-lg shadow-slate-200 active:scale-95"
-                                    >
-                                        {diagnosing === asset.asset_id ? 'Analyzing...' : 'Diagnose'}
-                                    </button>
+                                    <div className="flex justify-end items-center gap-2">
+                                        <button
+                                            onClick={() => handleDiagnose(asset.asset_id)}
+                                            disabled={diagnosing === asset.asset_id}
+                                            className="px-6 py-2 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-600 transition-all disabled:opacity-50 shadow-lg shadow-slate-200 active:scale-95"
+                                        >
+                                            {diagnosing === asset.asset_id ? 'Analyzing...' : 'Diagnose'}
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(asset.asset_id)}
+                                            className="p-2 text-slate-400 hover:text-red-500 transition-colors"
+                                            title="Delete Asset"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         );
                     })}
                     {displayedAssets.length === 0 && (
                         <tr>
-                            <td colSpan="5" className="px-8 py-12 text-center text-slate-400 italic">
+                            <td colSpan="6" className="px-8 py-12 text-center text-slate-400 italic">
                                 No assets match the current filters.
                             </td>
                         </tr>

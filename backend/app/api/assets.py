@@ -7,7 +7,7 @@ import io
 from datetime import datetime
 from app.db.session import get_db, SessionLocal
 from app.models.schemas import Asset, Spec, SystemLog
-from app.schemas.asset import AssetResponse, AssetUpdate, AssetCreate
+from app.schemas.asset import AssetResponse, AssetUpdate, AssetCreate, AssetBatchDelete
 from app.core.engine import engine
 
 router = APIRouter(prefix="/assets", tags=["Assets"])
@@ -294,3 +294,52 @@ def update_asset(asset_id: str, obj_in: AssetUpdate, db: Session = Depends(get_d
     db.refresh(asset)
     asset.current_age = engine.calculate_current_age(asset.initial_age, asset.created_at)
     return asset
+
+@router.delete("/{asset_id}")
+def delete_asset(asset_id: str, db: Session = Depends(get_db)):
+    """
+    Deletes a single asset safely.
+    """
+    asset = db.query(Asset).filter(Asset.asset_id == asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    
+    db.delete(asset)
+    
+    # Log Action
+    log = SystemLog(
+        action_type="DELETE",
+        entity_type="ASSET",
+        entity_id=asset_id,
+        details="Asset deleted manually."
+    )
+    db.add(log)
+    
+    db.commit()
+    return {"message": f"Asset {asset_id} deleted."}
+
+@router.post("/batch-delete")
+def delete_assets_batch(payload: AssetBatchDelete, db: Session = Depends(get_db)):
+    """
+    Deletes multiple assets safely.
+    """
+    assets = db.query(Asset).filter(Asset.asset_id.in_(payload.asset_ids)).all()
+    if not assets:
+        raise HTTPException(status_code=404, detail="No matching assets found.")
+    
+    deleted_count = 0
+    for asset in assets:
+        db.delete(asset)
+        deleted_count += 1
+    
+    # Log Action
+    log = SystemLog(
+        action_type="DELETE",
+        entity_type="ASSET",
+        entity_id="BATCH",
+        details=f"Batch delete: {deleted_count} assets removed. IDs: {', '.join(payload.asset_ids[:5])}..."
+    )
+    db.add(log)
+    
+    db.commit()
+    return {"message": f"{deleted_count} assets deleted."}

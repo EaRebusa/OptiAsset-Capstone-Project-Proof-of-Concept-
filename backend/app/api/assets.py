@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File, Body
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 from typing import List, Optional, Dict
@@ -54,6 +55,46 @@ def get_assets(search: Optional[str] = None, archived: bool = False, db: Session
             a.device_type = a.spec.device_type
 
     return assets
+
+@router.get("/export", response_class=StreamingResponse)
+def export_assets(db: Session = Depends(get_db)):
+    """
+    Exports all active assets to a CSV file.
+    """
+    assets = db.query(Asset).filter(Asset.is_active == True).all()
+    
+    data = []
+    for a in assets:
+        current_age = engine.calculate_current_age(a.initial_age, a.created_at)
+        device_type = a.device_type
+        if not device_type and a.spec:
+            device_type = a.spec.device_type
+            
+        data.append({
+            "Asset ID": a.asset_id,
+            "Model Name": a.model_name,
+            "Device Type": device_type,
+            "Initial Age (Months)": a.initial_age,
+            "Current Age (Months)": current_age,
+            "Current Temp (C)": a.current_temp,
+            "Current Usage (Hrs/Week)": a.current_usage,
+            "Maintenance Score": a.maint_score,
+            "Repairs": a.repairs,
+            "Health Score": a.override_score if a.override_score else a.health_score,
+            "Override Score": a.override_score,
+            "Override Reason": a.override_reason,
+            "Is Generic": a.is_generic,
+            "Last Updated": a.last_updated.strftime("%Y-%m-%d %H:%M:%S") if a.last_updated else None
+        })
+    
+    df = pd.DataFrame(data)
+    stream = io.StringIO()
+    df.to_csv(stream, index=False)
+    
+    response = StreamingResponse(iter([stream.getvalue()]),
+                                 media_type="text/csv")
+    response.headers["Content-Disposition"] = "attachment; filename=assets_export.csv"
+    return response
 
 @router.post("/", response_model=AssetResponse)
 def create_asset(asset_in: AssetCreate, db: Session = Depends(get_db)):

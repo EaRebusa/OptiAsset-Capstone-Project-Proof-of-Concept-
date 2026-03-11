@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.api import assets, specs, logs # Added logs import
+from app.api import assets, specs, logs, reports # Added reports import
 import logging
 import os
 
@@ -44,6 +44,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(assets.router, prefix="/api")
 app.include_router(specs.router, prefix="/api")
 app.include_router(logs.router, prefix="/api") # Added logs router
+app.include_router(reports.router, prefix="/api") # Added reports router
 
 @app.on_event("startup")
 async def startup_event():

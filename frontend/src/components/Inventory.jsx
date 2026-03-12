@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Monitor, Laptop, Filter, AlertTriangle, RefreshCw, Trash2, Archive } from 'lucide-react';
+import { Monitor, Laptop, Filter, AlertTriangle, RefreshCw, Trash2, Archive, ArrowDownUp, Thermometer, Calendar } from 'lucide-react';
 import Tooltip from './Tooltip';
 
 const formatAge = (months) => {
@@ -13,22 +13,53 @@ const formatAge = (months) => {
 
 const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor, onAssetClick, loading, onDelete, onBatchDelete }) => {
     const [filterStatus, setFilterStatus] = useState('All');
+    const [filterDeviceType, setFilterDeviceType] = useState('All');
+    const [sortBy, setSortBy] = useState('health');
     const [filterAge, setFilterAge] = useState(false);
     const [selectedAssets, setSelectedAssets] = useState([]);
 
     const getEffectiveScore = (asset) => asset.override_score || asset.health_score;
 
-    const displayedAssets = useMemo(() => filteredAssets.filter(asset => {
-        const matchesStatus = filterStatus === 'All' 
-            ? true 
-            : filterStatus === 'Overridden' 
-                ? !!asset.override_score 
-                : getEffectiveScore(asset) === filterStatus;
-        
-        const matchesAge = filterAge ? asset.current_age > 36 : true;
+    const displayedAssets = useMemo(() => {
+        let assets = filteredAssets.filter(asset => {
+            const matchesStatus = filterStatus === 'All' 
+                ? true 
+                : filterStatus === 'Overridden' 
+                    ? !!asset.override_score 
+                    : getEffectiveScore(asset) === filterStatus;
+            
+            const matchesAge = filterAge ? asset.current_age > 36 : true;
 
-        return matchesStatus && matchesAge;
-    }), [filteredAssets, filterStatus, filterAge]);
+            const isDesktop = asset.device_type === 'desktop' || asset.model_name.toLowerCase().includes('desktop') || asset.model_name.includes('OptiPlex') || asset.model_name.includes('ProDesk');
+            const deviceType = isDesktop ? 'Desktop' : 'Laptop';
+            const matchesDeviceType = filterDeviceType === 'All' || deviceType === filterDeviceType;
+
+            return matchesStatus && matchesAge && matchesDeviceType;
+        });
+
+        // Sorting logic
+        switch (sortBy) {
+            case 'age_asc':
+                 // User selected "Age (Oldest)", so we want largest age first (Descending numeric)
+                assets.sort((a, b) => (b.current_age || 0) - (a.current_age || 0));
+                break;
+            case 'age_desc':
+                // User selected "Age (Newest)", so we want smallest age first (Ascending numeric)
+                assets.sort((a, b) => (a.current_age || 0) - (b.current_age || 0));
+                break;
+            case 'temp_asc':
+                assets.sort((a, b) => (a.current_temp || 0) - (b.current_temp || 0));
+                break;
+            case 'temp_desc':
+                assets.sort((a, b) => (b.current_temp || 0) - (a.current_temp || 0));
+                break;
+            default:
+                // Default sort by health or other criteria can be handled here
+                break;
+        }
+
+        return assets;
+    }, [filteredAssets, filterStatus, filterAge, filterDeviceType, sortBy]);
 
     const handleSelect = (assetId) => {
         setSelectedAssets(prev => 
@@ -72,7 +103,7 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
 
     return (
         <div className="bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="p-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start gap-4">
                 <div className="flex items-center gap-4">
                     <h3 className="text-xl font-black text-slate-800 tracking-tight">Active Inventory</h3>
                     <span className="px-4 py-1.5 bg-slate-100 text-slate-500 rounded-full text-xs font-black uppercase tracking-widest">{displayedAssets.length} Units</span>
@@ -86,7 +117,7 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
                     )}
                 </div>
                 
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center justify-end gap-3">
                     <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-xl border border-slate-200">
                         <Filter size={14} className="text-slate-400" />
                         <select 
@@ -99,6 +130,34 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
                             <option value="Warning">Warning Only</option>
                             <option value="Healthy">Healthy Only</option>
                             <option value="Overridden">Manual Overrides</option>
+                        </select>
+                    </div>
+
+                    <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-xl border border-slate-200">
+                        <Laptop size={14} className="text-slate-400" />
+                        <select 
+                            value={filterDeviceType} 
+                            onChange={(e) => setFilterDeviceType(e.target.value)}
+                            className="bg-transparent text-xs font-bold text-slate-600 outline-none uppercase tracking-wider cursor-pointer"
+                        >
+                            <option value="All">All Devices</option>
+                            <option value="Laptop">Laptops Only</option>
+                            <option value="Desktop">Desktops Only</option>
+                        </select>
+                    </div>
+
+                    <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-xl border border-slate-200">
+                        <ArrowDownUp size={14} className="text-slate-400" />
+                        <select 
+                            value={sortBy} 
+                            onChange={(e) => setSortBy(e.target.value)}
+                            className="bg-transparent text-xs font-bold text-slate-600 outline-none uppercase tracking-wider cursor-pointer"
+                        >
+                            <option value="health">Sort by Health</option>
+                            <option value="age_desc">Age (Newest)</option>
+                            <option value="age_asc">Age (Oldest)</option>
+                            <option value="temp_desc">Temp (Hottest)</option>
+                            <option value="temp_asc">Temp (Coldest)</option>
                         </select>
                     </div>
 

@@ -15,6 +15,7 @@ const SystemConfig = () => {
     const [editingSpec, setEditingSpec] = useState(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
     const [notification, setNotification] = useState(null);
+    const [selectedArchivedAssets, setSelectedArchivedAssets] = useState([]);
     
     // Retraining State
     const [isRetraining, setIsRetraining] = useState(false);
@@ -91,6 +92,51 @@ const SystemConfig = () => {
         } catch (error) {
             console.error("Restore failed:", error);
             showNotification('error', "Failed to restore asset.");
+        }
+    };
+
+    const handleBatchRestore = async () => {
+        if (selectedArchivedAssets.length === 0) return;
+        
+        try {
+            // Assuming the backend supports batch restore, otherwise we'd loop
+            // Since the user asked for mass restore, I'll loop for now if no batch endpoint exists yet,
+            // or I can check if one needs to be created. The user prompt implied adding mass restore capability.
+            // I'll assume I can just loop or send a list if I updated the backend.
+            // But let's check if there is a batch restore endpoint.
+            // The prompt didn't ask to create a backend endpoint, but said "I also want to be able to mass restore if needed".
+            // If I look at the schemas, I didn't see a BatchRestore schema.
+            // For safety, I'll loop through the selected assets and restore them one by one for now,
+            // or I could add a new endpoint if I was editing the backend.
+            // Since I am editing frontend, I will implement it by iterating for now or assume a batch endpoint.
+            // Given the constraints, I'll use Promise.all to restore them concurrently.
+            
+            await Promise.all(selectedArchivedAssets.map(id => 
+                axios.post(`${API_BASE_URL}/assets/${id}/restore`)
+            ));
+
+            showNotification('success', `${selectedArchivedAssets.length} assets restored to active inventory.`);
+            setSelectedArchivedAssets([]);
+            fetchData();
+        } catch (error) {
+            console.error("Batch restore failed:", error);
+            showNotification('error', "Failed to restore some assets.");
+        }
+    };
+
+    const handleSelectArchived = (assetId) => {
+        setSelectedArchivedAssets(prev => 
+            prev.includes(assetId) 
+                ? prev.filter(id => id !== assetId) 
+                : [...prev, assetId]
+        );
+    };
+
+    const handleSelectAllArchived = (e) => {
+        if (e.target.checked) {
+            setSelectedArchivedAssets(archivedAssets.map(a => a.asset_id));
+        } else {
+            setSelectedArchivedAssets([]);
         }
     };
 
@@ -217,17 +263,35 @@ const SystemConfig = () => {
 
             {/* Inventory Archive Section */}
             <section className="mb-12">
-                <div className="flex items-center gap-3 mb-6">
-                    <div className="p-2 bg-red-100 text-red-600 rounded-lg">
-                        <Archive size={20} />
+                <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-red-100 text-red-600 rounded-lg">
+                            <Archive size={20} />
+                        </div>
+                        <h3 className="text-xl font-black text-slate-800 uppercase tracking-wide">Inventory Archive (History)</h3>
                     </div>
-                    <h3 className="text-xl font-black text-slate-800 uppercase tracking-wide">Inventory Archive (History)</h3>
+                    {selectedArchivedAssets.length > 0 && (
+                        <button 
+                            onClick={handleBatchRestore}
+                            className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-slate-800 transition shadow-lg shadow-slate-200"
+                        >
+                            <RotateCcw size={14} /> Restore Selected ({selectedArchivedAssets.length})
+                        </button>
+                    )}
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden h-72 flex flex-col">
                     <div className="flex-1 overflow-y-auto custom-scrollbar">
                         <table className="w-full text-left">
                             <thead className="sticky top-0 bg-slate-50 border-b border-slate-100 shadow-sm">
                                 <tr className="text-xs font-black text-slate-400 uppercase tracking-wider">
+                                    <th className="p-6 w-12">
+                                        <input 
+                                            type="checkbox"
+                                            onChange={handleSelectAllArchived}
+                                            checked={selectedArchivedAssets.length > 0 && selectedArchivedAssets.length === archivedAssets.length}
+                                            className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                                        />
+                                    </th>
                                     <th className="p-6">Asset ID</th>
                                     <th className="p-6">Model Name</th>
                                     <th className="p-6">Reason for Archiving</th>
@@ -237,13 +301,21 @@ const SystemConfig = () => {
                             <tbody className="divide-y divide-slate-100">
                                 {archivedAssets.length === 0 ? (
                                     <tr>
-                                        <td colSpan="4" className="p-8 text-center text-slate-400 italic font-medium">
+                                        <td colSpan="5" className="p-8 text-center text-slate-400 italic font-medium">
                                             No archived assets found.
                                         </td>
                                     </tr>
                                 ) : (
                                     archivedAssets.map((asset) => (
-                                        <tr key={asset.id} className="hover:bg-slate-50/50 transition">
+                                        <tr key={asset.id} className={`hover:bg-slate-50/50 transition ${selectedArchivedAssets.includes(asset.asset_id) ? 'bg-blue-50' : ''}`}>
+                                            <td className="p-6">
+                                                <input 
+                                                    type="checkbox"
+                                                    checked={selectedArchivedAssets.includes(asset.asset_id)}
+                                                    onChange={() => handleSelectArchived(asset.asset_id)}
+                                                    className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                                                />
+                                            </td>
                                             <td className="p-6 font-bold text-slate-800">{asset.asset_id}</td>
                                             <td className="p-6 text-sm font-bold text-slate-500">{asset.model_name}</td>
                                             <td className="p-6 text-sm italic text-slate-600">"{asset.deletion_reason}"</td>

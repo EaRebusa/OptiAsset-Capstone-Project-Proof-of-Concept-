@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Monitor, Laptop, Plus, Trash2, Edit2, Save, X, AlertTriangle, CheckCircle2, RefreshCw, BarChart3, Database, ShieldAlert, FileText, Clock, Activity, Calculator, Archive, RotateCcw } from 'lucide-react';
+import { Monitor, Laptop, Plus, Trash2, Edit2, Save, X, AlertTriangle, CheckCircle2, RefreshCw, BarChart3, Database, ShieldAlert, FileText, Clock, Activity, Calculator, Archive, RotateCcw, BrainCircuit } from 'lucide-react';
 import axios from 'axios';
 import Tooltip from './Tooltip';
 
@@ -13,8 +13,11 @@ const SystemConfig = () => {
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [editingSpec, setEditingSpec] = useState(null);
-    const [showDeleteConfirm, setShowDeleteConfirm] = useState(null); // model_name to delete
-    const [notification, setNotification] = useState(null); // { type: 'success' | 'warning', message: '' }
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+    const [notification, setNotification] = useState(null);
+    
+    // Retraining State
+    const [isRetraining, setIsRetraining] = useState(false);
 
     // Fetch Data
     const fetchData = async () => {
@@ -91,6 +94,21 @@ const SystemConfig = () => {
         }
     };
 
+    const handleRetrainModel = async () => {
+        setIsRetraining(true);
+        try {
+            const response = await axios.post(`${API_BASE_URL}/system/retrain`);
+            showNotification('success', response.data.message);
+            // Refresh logs to show the retraining event
+            fetchData();
+        } catch (error) {
+            console.error("Retraining failed:", error);
+            showNotification('error', error.response?.data?.detail || "Failed to retrain model.");
+        } finally {
+            setIsRetraining(false);
+        }
+    };
+
     const generics = specs.filter(s => s.is_generic);
     const models = specs.filter(s => !s.is_generic);
 
@@ -101,12 +119,22 @@ const SystemConfig = () => {
                     <h2 className="text-4xl font-black text-slate-800 tracking-tight mb-2">System Configuration</h2>
                     <p className="text-slate-500 font-medium">Manage hardware baselines and diagnostic thresholds.</p>
                 </div>
-                <button 
-                    onClick={() => { setEditingSpec(null); setShowModal(true); }}
-                    className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold uppercase tracking-wider hover:bg-blue-700 transition shadow-lg shadow-blue-200"
-                >
-                    <Plus size={18} /> Add New Baseline
-                </button>
+                <div className="flex gap-3">
+                    <button 
+                        onClick={handleRetrainModel}
+                        disabled={isRetraining}
+                        className={`flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-xl font-bold uppercase tracking-wider hover:bg-purple-700 transition shadow-lg shadow-purple-200 disabled:opacity-70 disabled:cursor-not-allowed ${isRetraining ? 'animate-pulse' : ''}`}
+                    >
+                        {isRetraining ? <RefreshCw className="animate-spin" size={18} /> : <BrainCircuit size={18} />}
+                        {isRetraining ? 'Training...' : 'Re-train AI Model'}
+                    </button>
+                    <button 
+                        onClick={() => { setEditingSpec(null); setShowModal(true); }}
+                        className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold uppercase tracking-wider hover:bg-blue-700 transition shadow-lg shadow-blue-200"
+                    >
+                        <Plus size={18} /> Add New Baseline
+                    </button>
+                </div>
             </header>
 
             {/* Stats Overview */}
@@ -277,6 +305,7 @@ const SystemConfig = () => {
                                                       log.action_type === 'UPDATE' ? 'bg-blue-100 text-blue-700' :
                                                       log.action_type === 'DELETE' || log.action_type === 'ARCHIVE' ? 'bg-red-100 text-red-700' :
                                                       log.action_type === 'RESTORE' ? 'bg-emerald-100 text-emerald-700' :
+                                                      log.action_type === 'SYSTEM' ? 'bg-purple-100 text-purple-700' :
                                                       log.action_type === 'OVERRIDE' ? 'bg-purple-100 text-purple-700' :
                                                       'bg-slate-100 text-slate-700'}`}>
                                                     {log.action_type}

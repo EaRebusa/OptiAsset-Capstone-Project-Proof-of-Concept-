@@ -5,6 +5,12 @@ import Papa from 'papaparse';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
 
+// Normalization function to match backend logic
+const normalizeAssetId = (id) => {
+    if (!id) return "";
+    return id.toString().replace(/\s+/g, '').toUpperCase();
+};
+
 const BulkUpload = () => {
     const [file, setFile] = useState(null);
     const [uploading, setUploading] = useState(false);
@@ -96,8 +102,11 @@ const BulkUpload = () => {
                     if (validationErrors.length > 0) {
                         skippedRows.push({ row: index + 2, reason: validationErrors.join(', ') });
                     } else {
+                        // Normalize ID here before sending to preview
+                        const normalizedId = normalizeAssetId(row.asset_id);
                         validRows.push({
                             ...row,
+                            asset_id: normalizedId, // Apply normalization
                             initial_age: parseInt(row.initial_age),
                             repairs: parseInt(row.repairs || 0),
                             maint_score: parseInt(row.maint_score || 5),
@@ -178,8 +187,11 @@ const BulkUpload = () => {
         }
 
         try {
+            // Apply normalization
+            const normalizedId = normalizeAssetId(manualEntry.asset_id);
             const payload = {
                 ...manualEntry,
+                asset_id: normalizedId,
                 initial_age: parseInt(manualEntry.initial_age),
                 repairs: parseInt(manualEntry.repairs),
                 maint_score: parseInt(manualEntry.maint_score),
@@ -189,7 +201,7 @@ const BulkUpload = () => {
             };
 
             await axios.post(`${API_BASE_URL}/assets/`, payload);
-            setLogs([{ type: 'success', message: `Asset ${manualEntry.asset_id} added successfully.` }]);
+            setLogs([{ type: 'success', message: `Asset ${payload.asset_id} added successfully.` }]);
             setManualEntry({
                 asset_id: '', model_name: '', device_type: 'laptop', initial_age: '', repairs: 0, maint_score: 5, current_temp: '', current_usage: ''
             });

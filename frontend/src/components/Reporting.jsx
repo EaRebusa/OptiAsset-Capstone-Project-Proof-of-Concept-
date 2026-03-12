@@ -64,7 +64,7 @@ const Reporting = () => {
 
             if (reportType === 'monthly') {
                 url = `${API_BASE_URL}/reports/monthly-summary`;
-                filename = `OptiAsset_Monthly_Summary_${new Date().toISOString().slice(0, 10)}.csv`;
+                filename = `OptiAsset_Monthly_Report_${new Date().toISOString().slice(0, 10)}.pdf`; // Changed extension to PDF
             } else if (reportType === 'export_assets') {
                 url = `${API_BASE_URL}/assets/export`;
                 filename = `OptiAsset_Fleet_Export_${new Date().toISOString().slice(0, 10)}.csv`;
@@ -121,8 +121,7 @@ const Reporting = () => {
                     </div>
                     <h3 className="text-lg font-black text-slate-800 mb-2">Monthly Health Summary</h3>
                     <p className="text-sm text-slate-500 mb-8 leading-relaxed">
-                        aggregated report containing health distribution counts, average asset age by device type, and total maintenance repairs logged.
-                        Ideal for high-level management updates.
+                        Full PDF report containing executive summary, health distribution charts, aging analysis, and maintenance statistics.
                     </p>
                     <button 
                         onClick={() => handleDownloadReport('monthly')}
@@ -130,7 +129,7 @@ const Reporting = () => {
                         className="w-full py-4 bg-slate-900 text-white rounded-xl font-bold text-sm hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {loading ? <Activity className="animate-spin" size={16}/> : <Download size={16} />}
-                        Download Monthly Report (CSV)
+                        Download Monthly Report (PDF)
                     </button>
                 </div>
 

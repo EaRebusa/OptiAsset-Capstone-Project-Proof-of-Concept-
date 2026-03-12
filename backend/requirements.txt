@@ -7,3 +7,4 @@ scikit-learn
 python-multipart
 python-dotenv
 matplotlib
+fpdf2

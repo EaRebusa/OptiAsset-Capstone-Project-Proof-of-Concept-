@@ -3,6 +3,8 @@ import joblib
 import os
 from datetime import datetime
 from pathlib import Path
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 
 class ScoringEngine:
     """
@@ -104,6 +106,53 @@ class ScoringEngine:
         except Exception as e:
             print(f"[CORE] Prediction Error: {e}")
             return "Error", None
+
+    def retrain_model(self, active_assets):
+        """
+        Refreshes the AI Brain using the current live database.
+        Accepts a list of Asset objects (fetched by the router).
+        """
+        if not active_assets or len(active_assets) < 10:
+            return False, "Insufficient data for retraining (Need 10+ assets)"
+
+        training_data = []
+
+        for asset in active_assets:
+            if not asset.spec: continue # Skip assets with missing specs
+
+            # Re-calculate features exactly as done in prediction
+            # [current_age, temp_ratio, usage_ratio, maint_score, repairs]
+            features = self.prepare_features(asset, asset.spec)
+            training_data.append(features[0])
+
+        if not training_data:
+            return False, "No valid training data could be generated."
+
+        X_train = np.array(training_data)
+
+        try:
+            # 1. New Scaler
+            new_scaler = StandardScaler()
+            X_scaled = new_scaler.fit_transform(X_train)
+
+            # 2. New KMeans
+            # We stick to 3 clusters: Healthy, Warning, Critical
+            new_model = KMeans(n_clusters=3, random_state=42, n_init=10)
+            new_model.fit(X_scaled)
+
+            # 3. Save Artifacts
+            joblib.dump(new_model, self.model_path)
+            joblib.dump(new_scaler, self.scaler_path)
+
+            # 4. Hot-Reload into Memory
+            self.model = new_model
+            self.scaler = new_scaler
+            self._calibrate_mapping() # Critical: Re-assign which cluster ID means "Critical"
+
+            return True, f"Model successfully retrained on {len(X_train)} assets."
+
+        except Exception as e:
+            return False, f"Training failed: {str(e)}"
 
 # Global Instance
 engine = ScoringEngine()

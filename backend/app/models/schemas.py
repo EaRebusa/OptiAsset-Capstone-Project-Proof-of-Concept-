@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -13,6 +13,7 @@ class Spec(Base):
     temp_norm = Column(Float)
     usage_norm = Column(Float)
     warranty_months = Column(Integer)
+    replacement_cost = Column(Float, default=0.0) # Procurement price in PHP
 
 class Asset(Base):
     """The 'Living Inventory' - Persistent asset storage."""
@@ -20,7 +21,10 @@ class Asset(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     asset_id = Column(String, unique=True, index=True)
-    model_name = Column(String, ForeignKey("specs_library.model_name"))
+    # Removed ForeignKey to allow unknown models
+    model_name = Column(String, nullable=True)
+    device_type = Column(String, nullable=True) # Added device_type
+    is_generic = Column(Boolean, default=False) # Added is_generic for badge
 
     # Auto-Aging Logic: Store baseline, calc delta in logic layer
     initial_age = Column(Integer)
@@ -40,6 +44,22 @@ class Asset(Base):
     override_score = Column(String, nullable=True)
     override_reason = Column(String, nullable=True)
 
+    # Soft Deletion
+    is_active = Column(Boolean, default=True, index=True)
+    deletion_reason = Column(String, nullable=True)
+
     last_updated = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
-    spec = relationship("Spec")
+    # Explicit relationship definition since ForeignKey was removed
+    spec = relationship("Spec", primaryjoin="Asset.model_name == Spec.model_name", foreign_keys=[model_name], uselist=False, viewonly=True)
+
+class SystemLog(Base):
+    """Audit trail for tracking critical system actions."""
+    __tablename__ = "system_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    action_type = Column(String, index=True) # CREATE, UPDATE, DELETE, OVERRIDE, UPLOAD
+    entity_type = Column(String, index=True) # SPEC, ASSET
+    entity_id = Column(String, index=True)   # Model Name or Asset ID
+    details = Column(String)                 # Description of the change

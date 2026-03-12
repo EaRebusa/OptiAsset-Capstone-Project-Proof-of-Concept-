@@ -3,12 +3,15 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
 
-# Create absolute path for the DB file to avoid "file not found" errors
-DB_PATH = os.path.join(os.getcwd(), "data", "optiasset.db")
+# Robust pathing: Calculate relative to this file, not CWD
+# .../backend/app/db/session.py -> .../backend/data/optiasset.db
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+DB_PATH = os.path.join(DATA_DIR, "optiasset.db")
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 # Ensure data directory exists
-os.makedirs("data", exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)
 
 engine = create_engine(
     DATABASE_URL,

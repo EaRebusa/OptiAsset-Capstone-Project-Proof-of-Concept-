@@ -1,34 +1,56 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+from typing import Optional, List
 from datetime import datetime
-from typing import Optional
 
 class AssetBase(BaseModel):
     asset_id: str
     model_name: str
+    device_type: Optional[str] = None # Added device_type
+    initial_age: int
     current_temp: float
     current_usage: float
     maint_score: int
     repairs: int
 
 class AssetCreate(AssetBase):
-    initial_age: int
+    last_updated: Optional[datetime] = None
 
 class AssetUpdate(BaseModel):
+    """
+    Schema for updating asset data (data correction) and applying manual overrides (label override).
+    """
+    # Data Correction Fields
+    initial_age: Optional[int] = None
     current_temp: Optional[float] = None
     current_usage: Optional[float] = None
     maint_score: Optional[int] = None
     repairs: Optional[int] = None
+
+    # Label Override Fields
     override_score: Optional[str] = None
     override_reason: Optional[str] = None
 
+class AssetBatchDelete(BaseModel):
+    asset_ids: List[str]
+
+class AssetSoftDelete(BaseModel):
+    reason: str
+
+class AssetBatchSoftDelete(BaseModel):
+    asset_ids: List[str]
+    reason: str
+
 class AssetResponse(AssetBase):
     id: int
-    initial_age: int
-    current_age: int # Calculated field
+    created_at: datetime
     health_score: str
     cluster_id: Optional[int]
-    created_at: datetime
-    last_updated: datetime
+    current_age: Optional[int]
+    override_score: Optional[str]
+    override_reason: Optional[str]
+    is_generic: bool = False # Added is_generic
+    is_active: bool = True
+    deletion_reason: Optional[str] = None
 
     class Config:
         from_attributes = True

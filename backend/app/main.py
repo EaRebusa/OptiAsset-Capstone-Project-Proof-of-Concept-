@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.api import assets
+from app.api import assets, specs, logs, reports, system # Added system import
 import logging
 import os
 
@@ -42,10 +42,16 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Routing
 app.include_router(assets.router, prefix="/api")
+app.include_router(specs.router, prefix="/api")
+app.include_router(logs.router, prefix="/api") 
+app.include_router(reports.router, prefix="/api")
+app.include_router(system.router, prefix="/api") # Added system router
 
 @app.on_event("startup")
 async def startup_event():
     """Verify that the 'Brains' are loaded on startup."""
+    # Robust path checking relative to CWD or hardcoded if needed
+    # But CWD is backend/ due to Docker/Start script usually
     model_exists = os.path.exists("data/model.pkl")
     scaler_exists = os.path.exists("data/scaler.pkl")
 

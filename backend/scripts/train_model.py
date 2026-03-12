@@ -4,6 +4,7 @@ import pandas as pd
 import joblib
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
+from pathlib import Path
 
 # Pathing fix
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -53,11 +54,15 @@ def train():
 
         # 4. Serialization
         print("[4/4] Saving 'brains' to data/ directory...")
-        os.makedirs("data", exist_ok=True)
-        joblib.dump(kmeans, "data/model.pkl")
-        joblib.dump(scaler, "data/scaler.pkl")
+        # Robust pathing to ensure artifacts are saved in backend/data/
+        base_dir = Path(__file__).resolve().parent.parent # .../backend
+        data_dir = base_dir / "data"
+        os.makedirs(data_dir, exist_ok=True)
+        
+        joblib.dump(kmeans, data_dir / "model.pkl")
+        joblib.dump(scaler, data_dir / "scaler.pkl")
 
-        print("[SUCCESS] model.pkl and scaler.pkl are ready.")
+        print(f"[SUCCESS] model.pkl and scaler.pkl are ready in {data_dir}")
 
     except Exception as e:
         print(f"[FATAL ERROR] Training failed: {e}")

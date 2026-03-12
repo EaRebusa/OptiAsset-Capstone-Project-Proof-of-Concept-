@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File, Body
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_, and_, func
 from typing import List, Optional, Dict
 import pandas as pd
@@ -21,7 +21,9 @@ def normalize_asset_id(asset_id: str) -> str:
 
 @router.get("/", response_model=List[AssetResponse])
 def get_assets(search: Optional[str] = None, archived: bool = False, db: Session = Depends(get_db)):
-    query = db.query(Asset)
+    # Eager load the spec relationship to avoid N+1 queries and allow searching
+    query = db.query(Asset).options(joinedload(Asset.spec))
+    
     if archived:
         query = query.filter(Asset.is_active == False)
     else:
@@ -34,20 +36,28 @@ def get_assets(search: Optional[str] = None, archived: bool = False, db: Session
             cond2 = and_(Asset.override_score == None, Asset.health_score == search)
             query = query.filter(or_(cond1, cond2))
         else:
-            # Normalize search term for asset_id search
             search_term_normalized = f"%{normalize_asset_id(search)}%"
+            # Perform a Left Join to include Spec columns in the search
+            query = query.outerjoin(Spec, Asset.model_name == Spec.model_name)
+            
             query = query.filter(
                 or_(
                     Asset.asset_id.ilike(search_term_normalized),
-                    Asset.model_name.ilike(f"%{search}%")
+                    Asset.model_name.ilike(f"%{search}%"),
+                    Asset.device_type.ilike(f"%{search}%"), # Search explicit asset type
+                    Spec.device_type.ilike(f"%{search}%")   # Search linked spec type (e.g. "Laptop")
                 )
             )
 
     assets = query.all()
+    
+    # Post-processing
     for a in assets:
         a.current_age = engine.calculate_current_age(a.initial_age, a.created_at)
+        # Ensure device_type is populated for frontend visual identity
         if not a.device_type and a.spec:
             a.device_type = a.spec.device_type
+            
     return assets
 
 @router.get("/export", response_class=StreamingResponse)
@@ -88,19 +98,31 @@ def create_asset(asset_in: AssetCreate, db: Session = Depends(get_db)):
              raise HTTPException(status_code=400, detail="Asset ID exists in archive. Restore it instead.")
         raise HTTPException(status_code=400, detail="Asset ID already exists")
 
+    # Resolve Device Type from Spec if missing
     is_generic = False
+    resolved_device_type = asset_in.device_type
+    
     spec = db.query(Spec).filter(Spec.model_name == asset_in.model_name).first()
-    if not spec:
+    if spec:
+        # If we have a spec, prefer its device type if user didn't provide one
+        if not resolved_device_type:
+            resolved_device_type = spec.device_type
+    else:
+        # Fallback Logic
         if asset_in.device_type == "laptop":
             spec = db.query(Spec).filter(Spec.model_name == "Generic Laptop").first()
         elif asset_in.device_type == "desktop":
             spec = db.query(Spec).filter(Spec.model_name == "Generic Desktop").first()
+        
         if spec:
             is_generic = True
+            if not resolved_device_type:
+                resolved_device_type = spec.device_type
 
     new_asset = Asset(
         asset_id=normalized_id,
-        model_name=asset_in.model_name, device_type=asset_in.device_type,
+        model_name=asset_in.model_name, 
+        device_type=resolved_device_type, # Use resolved type
         initial_age=asset_in.initial_age, current_temp=asset_in.current_temp,
         current_usage=asset_in.current_usage, maint_score=asset_in.maint_score,
         repairs=asset_in.repairs, is_generic=is_generic,
@@ -137,6 +159,11 @@ async def bulk_upload_preview(data: List[dict], db: Session = Depends(get_db)):
 async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
     logs = []
     processed_count = 0
+    
+    # Pre-fetch generic specs to avoid repeated queries
+    generic_laptop = db.query(Spec).filter(Spec.model_name == "Generic Laptop").first()
+    generic_desktop = db.query(Spec).filter(Spec.model_name == "Generic Desktop").first()
+    
     for row in data:
         asset_id = normalize_asset_id(row.get('asset_id'))
         if not asset_id:
@@ -144,20 +171,37 @@ async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
             continue
 
         existing_asset = db.query(Asset).filter(func.upper(Asset.asset_id) == asset_id).first()
+        
+        # Resolve device_type logic
+        incoming_model = row.get('model_name', 'Unknown Model')
+        incoming_type = row.get('device_type')
+        
+        # If updating
         if existing_asset:
-            # Update logic...
             existing_asset.current_temp = row.get('current_temp', existing_asset.current_temp)
             existing_asset.current_usage = row.get('current_usage', existing_asset.current_usage)
             existing_asset.maint_score = row.get('maint_score', existing_asset.maint_score)
             existing_asset.repairs = row.get('repairs', existing_asset.repairs)
             existing_asset.last_updated = datetime.utcnow()
+            
+            # If device type was missing, try to fill it now
+            if not existing_asset.device_type and incoming_type:
+                existing_asset.device_type = incoming_type
+                
             logs.append({"status": "updated", "message": f"Asset {asset_id} updated."})
         else:
-            # Create new asset
+            # Create new
+            # Try to infer device type if missing
+            if not incoming_type:
+                # Basic heuristic check if model exists in spec
+                spec = db.query(Spec).filter(Spec.model_name == incoming_model).first()
+                if spec:
+                    incoming_type = spec.device_type
+            
             new_asset = Asset(
                 asset_id=asset_id,
-                model_name=row.get('model_name', 'Unknown Model'),
-                device_type=row.get('device_type'), 
+                model_name=incoming_model,
+                device_type=incoming_type, 
                 initial_age=row.get('initial_age', 0),
                 current_temp=row.get('current_temp', 0.0),
                 current_usage=row.get('current_usage', 0.0),
@@ -186,13 +230,20 @@ def run_single_diagnostic(asset_id: str, db: Session = Depends(get_db)):
     asset = db.query(Asset).filter(func.upper(Asset.asset_id) == normalized_id).first()
     if not asset or not asset.is_active:
         raise HTTPException(status_code=404, detail="Asset not found")
-    # ... (rest of the function is the same)
+    
     spec = db.query(Spec).filter(Spec.model_name == asset.model_name).first()
     if not spec:
-        if asset.device_type == "laptop": spec = db.query(Spec).filter(Spec.model_name == "Generic Laptop").first()
-        elif asset.device_type == "desktop": spec = db.query(Spec).filter(Spec.model_name == "Generic Desktop").first()
-        if spec: asset.is_generic = True
-        else: raise HTTPException(status_code=400, detail="Manufacturer specs missing for this model.")
+        # Robust fallback
+        if asset.device_type and "laptop" in asset.device_type.lower(): 
+            spec = db.query(Spec).filter(Spec.model_name == "Generic Laptop").first()
+        elif asset.device_type and "desktop" in asset.device_type.lower(): 
+            spec = db.query(Spec).filter(Spec.model_name == "Generic Desktop").first()
+        
+        if spec: 
+            asset.is_generic = True
+        else: 
+            raise HTTPException(status_code=400, detail="Manufacturer specs missing for this model.")
+            
     features = engine.prepare_features(asset, spec)
     label, cid = engine.predict_health(features)
     asset.health_score = label
@@ -206,7 +257,7 @@ def update_asset(asset_id: str, obj_in: AssetUpdate, db: Session = Depends(get_d
     asset = db.query(Asset).filter(func.upper(Asset.asset_id) == normalized_id).first()
     if not asset or not asset.is_active:
         raise HTTPException(status_code=404, detail="Asset not found")
-    # ... (rest of the function is the same)
+    
     update_data = obj_in.dict(exclude_unset=True)
     for field, value in update_data.items():
         setattr(asset, field, value)
@@ -223,7 +274,7 @@ def delete_asset(asset_id: str, reason: str = "Manual Deletion", db: Session = D
     asset = db.query(Asset).filter(func.upper(Asset.asset_id) == normalized_id).first()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
-    # ... (rest of the function is the same)
+    
     asset.is_active = False
     asset.deletion_reason = reason
     log = SystemLog(action_type="ARCHIVE", entity_type="ASSET", entity_id=asset_id, details=f"Asset archived. Reason: {reason}")
@@ -237,7 +288,7 @@ def delete_assets_batch(payload: AssetBatchSoftDelete, db: Session = Depends(get
     assets = db.query(Asset).filter(func.upper(Asset.asset_id).in_(normalized_ids)).all()
     if not assets:
         raise HTTPException(status_code=404, detail="No matching assets found.")
-    # ... (rest of the function is the same)
+    
     archived_count = 0
     for asset in assets:
         if asset.is_active:
@@ -255,7 +306,7 @@ def restore_asset(asset_id: str, db: Session = Depends(get_db)):
     asset = db.query(Asset).filter(func.upper(Asset.asset_id) == normalized_id).first()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
-    # ... (rest of the function is the same)
+    
     if asset.is_active:
         return {"message": "Asset is already active."}
     asset.is_active = True
@@ -277,9 +328,9 @@ async def trigger_bulk_diagnostic(background_tasks: BackgroundTasks):
                 spec = db.query(Spec).filter(Spec.model_name == asset.model_name).first()
                 if not spec:
                     # Fallback logic
-                    if asset.device_type == "laptop":
+                    if asset.device_type and "laptop" in asset.device_type.lower():
                         spec = db.query(Spec).filter(Spec.model_name == "Generic Laptop").first()
-                    elif asset.device_type == "desktop":
+                    elif asset.device_type and "desktop" in asset.device_type.lower():
                         spec = db.query(Spec).filter(Spec.model_name == "Generic Desktop").first()
                     
                     if spec:
@@ -292,6 +343,8 @@ async def trigger_bulk_diagnostic(background_tasks: BackgroundTasks):
                 asset.health_score = label
                 asset.cluster_id = cid
             db.commit()
+        except Exception as e:
+            print(f"Bulk Diagnostic Error: {e}") # Debugging log
         finally:
             db.close()
 

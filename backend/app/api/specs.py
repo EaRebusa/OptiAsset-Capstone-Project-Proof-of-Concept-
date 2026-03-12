@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union
 from app.db.session import get_db
 from app.models.schemas import Spec, Asset, SystemLog
 from app.schemas.spec import SpecCreate, SpecUpdate, SpecResponse
 
 router = APIRouter(prefix="/specs", tags=["Specs Library"])
 
+# Changed response model to allow generic dictionary for extra fields like 'asset_count'
+# which are not in the strict SpecResponse schema but needed for the UI
 @router.get("/", response_model=List[dict])
 def get_specs(db: Session = Depends(get_db)):
     """
@@ -30,6 +32,7 @@ def get_specs(db: Session = Depends(get_db)):
             "temp_norm": spec.temp_norm,
             "usage_norm": spec.usage_norm,
             "warranty_months": spec.warranty_months,
+            "replacement_cost": spec.replacement_cost if hasattr(spec, 'replacement_cost') else 0.0,
             "asset_count": count,
             "is_generic": is_generic
         })
@@ -74,7 +77,8 @@ def create_spec(spec_in: SpecCreate, db: Session = Depends(get_db)):
         model_name=spec_in.model_name,
         temp_norm=spec_in.temp_norm,
         usage_norm=spec_in.usage_norm,
-        warranty_months=spec_in.warranty_months
+        warranty_months=spec_in.warranty_months,
+        replacement_cost=spec_in.replacement_cost # Ensure cost is saved
     )
     db.add(new_spec)
     
@@ -83,7 +87,7 @@ def create_spec(spec_in: SpecCreate, db: Session = Depends(get_db)):
         action_type="CREATE",
         entity_type="SPEC",
         entity_id=new_spec.model_name,
-        details=f"Created baseline: {new_spec.model_name} (T:{new_spec.temp_norm}, U:{new_spec.usage_norm})"
+        details=f"Created baseline: {new_spec.model_name} (T:{new_spec.temp_norm}, Cost:{new_spec.replacement_cost})"
     )
     db.add(log)
     
@@ -107,6 +111,8 @@ def update_spec(model_name: str, spec_in: SpecUpdate, db: Session = Depends(get_
     update_data = spec_in.dict(exclude_unset=True)
     changes = []
     for field, value in update_data.items():
+        if not hasattr(spec, field): continue # Safety check
+
         old_val = getattr(spec, field)
         if old_val != value:
             changes.append(f"{field}: {old_val} -> {value}")

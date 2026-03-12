@@ -397,13 +397,14 @@ const SpecsTable = ({ specs, onEdit, onDelete, isGeneric }) => (
                     <th className="p-6">Temp Norm (°C)</th>
                     <th className="p-6">Usage Norm (Hrs)</th>
                     <th className="p-6">Warranty (Mos)</th>
+                    <th className="p-6">Unit Price (PHP)</th>
                     <th className="p-6 text-right">Actions</th>
                 </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
                 {specs.length === 0 ? (
                     <tr>
-                        <td colSpan="6" className="p-8 text-center text-slate-400 italic font-medium">
+                        <td colSpan="7" className="p-8 text-center text-slate-400 italic font-medium">
                             No specs found. Add a baseline to get started.
                         </td>
                     </tr>
@@ -422,6 +423,9 @@ const SpecsTable = ({ specs, onEdit, onDelete, isGeneric }) => (
                             <td className="p-6 font-bold text-slate-600">{spec.temp_norm}</td>
                             <td className="p-6 font-bold text-slate-600">{spec.usage_norm}</td>
                             <td className="p-6 font-bold text-slate-600">{spec.warranty_months}</td>
+                            <td className="p-6 font-bold text-slate-800">
+                                ₱{(spec.replacement_cost || 0).toLocaleString()}
+                            </td>
                             <td className="p-6 text-right">
                                 <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button 
@@ -457,7 +461,8 @@ const SpecModal = ({ spec, onClose, onSave }) => {
         device_type: spec?.device_type || 'laptop',
         temp_norm: spec?.temp_norm || '',
         usage_norm: spec?.usage_norm || '',
-        warranty_months: spec?.warranty_months || ''
+        warranty_months: spec?.warranty_months || '',
+        replacement_cost: spec?.replacement_cost || ''
     });
 
     // Temp Calculation State
@@ -486,7 +491,8 @@ const SpecModal = ({ spec, onClose, onSave }) => {
             ...formData,
             temp_norm: parseFloat(formData.temp_norm),
             usage_norm: parseFloat(formData.usage_norm),
-            warranty_months: parseInt(formData.warranty_months)
+            warranty_months: parseInt(formData.warranty_months),
+            replacement_cost: parseFloat(formData.replacement_cost)
         });
     };
 
@@ -548,7 +554,7 @@ const SpecModal = ({ spec, onClose, onSave }) => {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                         <div>
                             <div className="flex justify-between items-center mb-2">
                                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Temp Norm (°C)</label>
@@ -608,6 +614,9 @@ const SpecModal = ({ spec, onClose, onSave }) => {
                                 required
                             />
                         </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Warranty (Mos)</label>
                             <input 
@@ -615,6 +624,18 @@ const SpecModal = ({ spec, onClose, onSave }) => {
                                 name="warranty_months"
                                 value={formData.warranty_months}
                                 onChange={handleChange}
+                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                                required
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Unit Price (PHP)</label>
+                            <input 
+                                type="number" 
+                                name="replacement_cost"
+                                value={formData.replacement_cost}
+                                onChange={handleChange}
+                                placeholder="0.00"
                                 className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
                                 required
                             />

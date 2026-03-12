@@ -50,15 +50,15 @@ def setup_cold_start():
     try:
         print("📚 [2/3] Seeding Specs Library baselines...")
         
-        # Define baseline specs for demo devices
+        # Define baseline specs for demo devices with PROCUREMENT COSTS
         specs_data = [
-            {"device_type": "laptop", "model_name": "Dell Latitude 5440", "temp_norm": 47.5, "usage_norm": 27.5, "warranty_months": 36},
-            {"device_type": "laptop", "model_name": "HP EliteBook 840", "temp_norm": 47.5, "usage_norm": 27.5, "warranty_months": 36},
-            {"device_type": "desktop", "model_name": "Dell OptiPlex 7000", "temp_norm": 41.5, "usage_norm": 37.5, "warranty_months": 36},
-            {"device_type": "desktop", "model_name": "HP ProDesk 400", "temp_norm": 41.5, "usage_norm": 37.5, "warranty_months": 36},
+            {"device_type": "laptop", "model_name": "Dell Latitude 5440", "temp_norm": 47.5, "usage_norm": 27.5, "warranty_months": 36, "cost": 45000},
+            {"device_type": "laptop", "model_name": "HP EliteBook 840", "temp_norm": 47.5, "usage_norm": 27.5, "warranty_months": 36, "cost": 52000},
+            {"device_type": "desktop", "model_name": "Dell OptiPlex 7000", "temp_norm": 41.5, "usage_norm": 37.5, "warranty_months": 36, "cost": 38000},
+            {"device_type": "desktop", "model_name": "HP ProDesk 400", "temp_norm": 41.5, "usage_norm": 37.5, "warranty_months": 36, "cost": 35000},
             # Fallbacks
-            {"device_type": "laptop", "model_name": "Generic Laptop", "temp_norm": 50.0, "usage_norm": 30.0, "warranty_months": 12},
-            {"device_type": "desktop", "model_name": "Generic Desktop", "temp_norm": 45.0, "usage_norm": 40.0, "warranty_months": 12},
+            {"device_type": "laptop", "model_name": "Generic Laptop", "temp_norm": 50.0, "usage_norm": 30.0, "warranty_months": 12, "cost": 30000},
+            {"device_type": "desktop", "model_name": "Generic Desktop", "temp_norm": 45.0, "usage_norm": 40.0, "warranty_months": 12, "cost": 25000},
         ]
 
         added_count = 0
@@ -70,13 +70,19 @@ def setup_cold_start():
                     model_name=s["model_name"],
                     temp_norm=s["temp_norm"],
                     usage_norm=s["usage_norm"],
-                    warranty_months=s["warranty_months"]
+                    warranty_months=s["warranty_months"],
+                    replacement_cost=s["cost"]
                 )
                 db.add(new_spec)
                 added_count += 1
+            else:
+                # Update existing specs with cost if missing
+                if exists.replacement_cost == 0:
+                    exists.replacement_cost = s["cost"]
+                    added_count += 1 # Count updates too
         
         db.commit()
-        print(f"   ✅ Specs Library ready. ({added_count} new specs added)")
+        print(f"   ✅ Specs Library ready. ({added_count} new/updated specs)")
 
         # 4. Final Validation
         asset_count = db.query(Asset).count()

@@ -13,6 +13,7 @@ class Spec(Base):
     temp_norm = Column(Float)
     usage_norm = Column(Float)
     warranty_months = Column(Integer)
+    replacement_cost = Column(Float, default=0.0) # Procurement price in PHP
 
 class Asset(Base):
     """The 'Living Inventory' - Persistent asset storage."""

@@ -78,6 +78,7 @@ const App = () => {
     const [selectedAsset, setSelectedAsset] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [activePieIndex, setActivePieIndex] = useState(null);
+    const [specs, setSpecs] = useState([]); // Need specs for cost calculations
 
     // --- Effects ---
 
@@ -101,6 +102,19 @@ const App = () => {
 
         return () => clearTimeout(delayDebounceFn);
     }, [searchTerm]);
+
+    // Fetch specs on mount for financial calculation
+    useEffect(() => {
+        const fetchSpecs = async () => {
+            try {
+                const res = await api.get('/specs/');
+                setSpecs(res.data);
+            } catch (err) {
+                console.error("Failed to load specs for dashboard cost calculation");
+            }
+        };
+        fetchSpecs();
+    }, []);
 
 
     // --- Data Fetching & Actions ---
@@ -190,8 +204,13 @@ const App = () => {
         window.location.hash = tab;
     };
 
+    // Updated filtering logic to support device types
     const handleFilterAndNavigate = (filter) => {
-        setSearchTerm(filter);
+        // Map simplified terms to actual search logic
+        if (filter === 'Laptops') setSearchTerm('laptop');
+        else if (filter === 'Desktops') setSearchTerm('desktop');
+        else setSearchTerm(filter);
+        
         handleTabChange('inventory');
     };
 
@@ -206,28 +225,55 @@ const App = () => {
         const healthy = assets.filter(a => getEffectiveHealthScore(a) === 'Healthy').length;
         const unscored = assets.filter(a => getEffectiveHealthScore(a) === 'Unscored').length;
         
-        // Fleet Health Index: ((Healthy * 1.0) + (Warning * 0.5) + (Critical * 0)) / Total Assets * 100
+        // Fleet Health Index
         const fleetHealth = total > 0 
             ? Math.round(((healthy * 1.0) + (warning * 0.5) + (critical * 0)) / total * 100) 
             : 0;
             
         const attention = critical + warning;
         
-        // Financial Risk Exposure: (Critical Units * ₱40,000) + (Critical Units * ₱1,500)
-        const risk = (critical * 35000) + (critical * 1000);
+        // --- DYNAMIC FINANCIAL RISK CALCULATION ---
+        let calculatedRisk = 0;
         
-        const desktops = assets.filter(a => a.model_name.includes('OptiPlex')).length;
-        const laptops = total - desktops;
+        const specPriceMap = {};
+        specs.forEach(s => {
+            specPriceMap[s.model_name] = s.replacement_cost || 0;
+        });
         
-        // Mocking stale data check
+        const FALLBACK_COST_LAPTOP = 30000;
+        const FALLBACK_COST_DESKTOP = 25000;
+
+        assets.forEach(asset => {
+            const health = getEffectiveHealthScore(asset);
+            let cost = specPriceMap[asset.model_name];
+            
+            // If cost missing, try to guess fallback based on device type
+            if (!cost) {
+                if (asset.device_type === 'laptop') cost = FALLBACK_COST_LAPTOP;
+                else if (asset.device_type === 'desktop') cost = FALLBACK_COST_DESKTOP;
+                else cost = 0;
+            }
+
+            if (health === 'Critical') {
+                calculatedRisk += cost;
+            } else if (health === 'Warning') {
+                calculatedRisk += (cost * 0.10);
+            }
+        });
+        
+        const risk = calculatedRisk;
+        
+        const laptopCount = assets.filter(a => a.device_type === 'laptop').length;
+        const desktopCount = assets.filter(a => a.device_type === 'desktop').length;
+        
         const stale = assets.filter(a => a.last_updated && (new Date() - new Date(a.last_updated)) > (30 * 24 * 60 * 60 * 1000)).length;
 
         return {
             total, critical, warning, healthy, unscored,
             fleetHealth, attention, risk,
-            laptops, desktops, stale
+            laptops: laptopCount, desktops: desktopCount, stale
         };
-    }, [assets]);
+    }, [assets, specs]);
 
     const pieData = [
         { name: 'Healthy', value: stats.healthy },
@@ -282,11 +328,11 @@ const App = () => {
                                 onClick={() => handleFilterAndNavigate('Warning')}
                             />
                             <StatCard 
-                                label="Financial Risk" 
-                                value={`₱${stats.risk.toLocaleString()}`} 
+                                label="Forecasted Risk" 
+                                value={`₱${stats.risk.toLocaleString(undefined, {maximumFractionDigits: 0})}`} 
                                 icon={<DollarSign className="text-red-600"/>} 
                                 color="red" 
-                                subtext="Est. Capital at Risk (Replacement & Downtime)"
+                                subtext="Estimated Replacement Costs (Based on Specs)"
                                 onClick={() => handleFilterAndNavigate('Critical')}
                             />
                         </div>
@@ -350,9 +396,10 @@ const App = () => {
                                                     paddingAngle={5}
                                                     dataKey="value"
                                                     stroke="none"
+                                                    onClick={(data) => handleFilterAndNavigate(data.name)}
                                                 >
                                                     {deviceData.map((entry, index) => (
-                                                        <Cell key={entry.name} fill={DEVICE_COLORS[entry.name]} />
+                                                        <Cell key={entry.name} fill={DEVICE_COLORS[entry.name]} cursor="pointer" />
                                                     ))}
                                                 </Pie>
                                                 <Tooltip />

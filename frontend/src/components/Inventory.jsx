@@ -153,7 +153,7 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
                             onChange={(e) => setSortBy(e.target.value)}
                             className="bg-transparent text-xs font-bold text-slate-600 outline-none uppercase tracking-wider cursor-pointer"
                         >
-                            <option value="health">Sort by Health</option>
+                            <option value="health">Default Sort</option>
                             <option value="age_desc">Age (Newest)</option>
                             <option value="age_asc">Age (Oldest)</option>
                             <option value="temp_desc">Temp (Hottest)</option>

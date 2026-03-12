@@ -92,6 +92,10 @@ def create_asset(asset_in: AssetCreate, db: Session = Depends(get_db)):
     if not normalized_id:
         raise HTTPException(status_code=400, detail="Asset ID cannot be empty.")
 
+    # Guardrail: Prevent negative age
+    if asset_in.initial_age < 0:
+        raise HTTPException(status_code=400, detail="Initial age cannot be negative. 0 is allowed for new assets.")
+
     existing_asset = db.query(Asset).filter(func.upper(Asset.asset_id) == normalized_id).first()
     if existing_asset:
         if not existing_asset.is_active:
@@ -129,7 +133,14 @@ def create_asset(asset_in: AssetCreate, db: Session = Depends(get_db)):
         last_updated=asset_in.last_updated or datetime.utcnow()
     )
     db.add(new_asset)
-    log = SystemLog(action_type="CREATE", entity_type="ASSET", entity_id=new_asset.asset_id, details=f"Manual creation. Model: {new_asset.model_name}")
+    
+    # Determine baseline info for logging
+    if spec:
+        baseline_info = "Generic Baseline" if is_generic else "Specific Baseline"
+    else:
+        baseline_info = "No Baseline Found"
+
+    log = SystemLog(action_type="CREATE", entity_type="ASSET", entity_id=new_asset.asset_id, details=f"Manual creation. Model: {new_asset.model_name}. ({baseline_info})")
     db.add(log)
     try:
         db.commit()
@@ -259,6 +270,12 @@ def update_asset(asset_id: str, obj_in: AssetUpdate, db: Session = Depends(get_d
         raise HTTPException(status_code=404, detail="Asset not found")
     
     update_data = obj_in.dict(exclude_unset=True)
+    
+    # Check for negative initial_age in updates
+    if 'initial_age' in update_data and update_data['initial_age'] is not None:
+        if update_data['initial_age'] < 0:
+             raise HTTPException(status_code=400, detail="Initial age cannot be negative.")
+
     for field, value in update_data.items():
         setattr(asset, field, value)
     log = SystemLog(action_type="UPDATE", entity_type="ASSET", entity_id=asset_id, details=f"Asset updated. Override: {obj_in.override_score}" if obj_in.override_score else "Asset data updated.")

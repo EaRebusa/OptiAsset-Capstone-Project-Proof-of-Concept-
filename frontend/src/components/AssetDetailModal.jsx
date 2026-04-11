@@ -26,6 +26,8 @@ const formatAge = (months) => {
 const AssetDetailModal = ({ asset, onClose, onSave }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [formData, setFormData] = useState({
+        asset_id: '',
+        model_name: '',
         initial_age: 0,
         repairs: 0,
         maint_score: 0,
@@ -48,6 +50,8 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
     useEffect(() => {
         if (asset) {
             setFormData({
+                asset_id: asset.asset_id,
+                model_name: asset.model_name,
                 initial_age: asset.initial_age,
                 repairs: asset.repairs,
                 maint_score: asset.maint_score,
@@ -77,6 +81,14 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
     };
 
     const validateForm = () => {
+        if (!formData.asset_id || !formData.asset_id.trim()) {
+            return "Asset ID cannot be empty.";
+        }
+        
+        if (!formData.model_name || !formData.model_name.trim()) {
+            return "Model Name cannot be empty.";
+        }
+
         const temp = parseFloat(formData.current_temp);
         if (isNaN(temp) || temp < 10 || temp > 120) {
             return "Temperature must be between 10°C and 120°C.";
@@ -113,6 +125,8 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
         }
 
         const payload = {
+            asset_id: formData.asset_id,
+            model_name: formData.model_name,
             initial_age: parseInt(formData.initial_age),
             repairs: parseInt(formData.repairs),
             maint_score: parseInt(formData.maint_score),
@@ -133,9 +147,32 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
                         <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
                             {asset.model_name.includes('OptiPlex') ? <Monitor size={24}/> : <Laptop size={24}/>}
                         </div>
-                        <div>
-                            <h2 className="text-2xl font-black text-slate-800 tracking-tight">{asset.asset_id}</h2>
-                            <p className="text-sm text-slate-500 font-bold uppercase tracking-wider">{asset.model_name}</p>
+                        <div className="flex flex-col gap-1">
+                            {isEditing ? (
+                                <>
+                                    <input 
+                                        type="text"
+                                        name="asset_id"
+                                        value={formData.asset_id}
+                                        onChange={handleInputChange}
+                                        className="text-2xl font-black text-slate-800 tracking-tight bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5 outline-none focus:ring-2 focus:ring-blue-500 w-64"
+                                        placeholder="Asset ID"
+                                    />
+                                    <input 
+                                        type="text"
+                                        name="model_name"
+                                        value={formData.model_name}
+                                        onChange={handleInputChange}
+                                        className="text-sm text-slate-600 font-bold uppercase tracking-wider bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5 outline-none focus:ring-2 focus:ring-blue-500 w-64"
+                                        placeholder="Model Name"
+                                    />
+                                </>
+                            ) : (
+                                <>
+                                    <h2 className="text-2xl font-black text-slate-800 tracking-tight">{asset.asset_id}</h2>
+                                    <p className="text-sm text-slate-500 font-bold uppercase tracking-wider">{asset.model_name}</p>
+                                </>
+                            )}
                         </div>
                     </div>
                     <div className="flex items-center gap-4">

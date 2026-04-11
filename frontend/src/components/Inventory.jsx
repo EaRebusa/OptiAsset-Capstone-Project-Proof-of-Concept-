@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Monitor, Laptop, Filter, AlertTriangle, RefreshCw, Trash2, Archive, ArrowDownUp, Thermometer, Calendar } from 'lucide-react';
+import { Monitor, Laptop, Filter, AlertTriangle, RefreshCw, Trash2, Archive, ArrowDownUp, Thermometer, Calendar, ShieldAlert } from 'lucide-react';
 import Tooltip from './Tooltip';
 
 const formatAge = (months) => {
@@ -16,6 +16,7 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
     const [filterDeviceType, setFilterDeviceType] = useState('All');
     const [sortBy, setSortBy] = useState('health');
     const [filterAge, setFilterAge] = useState(false);
+    const [filterGeneric, setFilterGeneric] = useState(false);
     const [selectedAssets, setSelectedAssets] = useState([]);
 
     const getEffectiveScore = (asset) => asset.override_score || asset.health_score;
@@ -33,8 +34,10 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
             const isDesktop = asset.device_type === 'desktop' || asset.model_name.toLowerCase().includes('desktop') || asset.model_name.includes('OptiPlex') || asset.model_name.includes('ProDesk');
             const deviceType = isDesktop ? 'Desktop' : 'Laptop';
             const matchesDeviceType = filterDeviceType === 'All' || deviceType === filterDeviceType;
+            
+            const matchesGeneric = filterGeneric ? asset.is_generic : true;
 
-            return matchesStatus && matchesAge && matchesDeviceType;
+            return matchesStatus && matchesAge && matchesDeviceType && matchesGeneric;
         });
 
         // Sorting logic
@@ -59,7 +62,7 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
         }
 
         return assets;
-    }, [filteredAssets, filterStatus, filterAge, filterDeviceType, sortBy]);
+    }, [filteredAssets, filterStatus, filterAge, filterDeviceType, sortBy, filterGeneric]);
 
     const handleSelect = (assetId) => {
         setSelectedAssets(prev => 
@@ -166,6 +169,13 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
                         className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-bold uppercase tracking-wider transition-all ${filterAge ? 'bg-amber-50 border-amber-200 text-amber-600' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
                     >
                         <AlertTriangle size={14} /> Out of Warranty (>3y)
+                    </button>
+
+                    <button 
+                        onClick={() => setFilterGeneric(!filterGeneric)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-bold uppercase tracking-wider transition-all ${filterGeneric ? 'bg-purple-50 border-purple-200 text-purple-600' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                    >
+                        <ShieldAlert size={14} /> Generic Specs
                     </button>
                 </div>
             </div>

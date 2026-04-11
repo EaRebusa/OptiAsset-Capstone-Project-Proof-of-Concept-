@@ -19,6 +19,8 @@ class AssetUpdate(BaseModel):
     """
     Schema for updating asset data (data correction) and applying manual overrides (label override).
     """
+    asset_id: Optional[str] = None
+    model_name: Optional[str] = None
     # Data Correction Fields
     initial_age: Optional[int] = Field(None, ge=0)
     current_temp: Optional[float] = Field(None, ge=10, le=120)

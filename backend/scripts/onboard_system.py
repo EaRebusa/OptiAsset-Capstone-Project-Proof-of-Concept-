@@ -6,7 +6,7 @@ import pandas as pd
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from app.db.session import SessionLocal, engine, Base
-from app.models.schemas import Spec, Asset
+from app.models.schemas import Spec, Asset, SystemSettings
 
 def onboard():
     """Initializes the SQLite DB and migrates your 0.55 score CSV."""
@@ -33,6 +33,16 @@ def onboard():
                 device_type=s["type"], model_name=s["name"],
                 temp_norm=s["t"], usage_norm=s["u"], warranty_months=s["w"]
             ))
+            
+    # Seed Default Financial Risk Settings
+    if not db.query(SystemSettings).first():
+        db.add(SystemSettings(
+            warning_multiplier=0.10,
+            critical_multiplier=1.0,
+            fallback_laptop_cost=30000.0,
+            fallback_desktop_cost=25000.0
+        ))
+        
     db.commit()
 
     # Import your generated 1,200 row dataset

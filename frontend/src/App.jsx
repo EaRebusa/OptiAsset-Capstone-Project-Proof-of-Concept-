@@ -79,6 +79,7 @@ const App = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [activePieIndex, setActivePieIndex] = useState(null);
     const [specs, setSpecs] = useState([]); // Need specs for cost calculations
+    const [systemSettings, setSystemSettings] = useState(null);
 
     // --- Effects ---
 
@@ -103,17 +104,20 @@ const App = () => {
         return () => clearTimeout(delayDebounceFn);
     }, [searchTerm]);
 
-    // Fetch specs on mount for financial calculation
     useEffect(() => {
-        const fetchSpecs = async () => {
+        const fetchInitialData = async () => {
             try {
-                const res = await api.get('/specs/');
-                setSpecs(res.data);
+                const [specsRes, settingsRes] = await Promise.all([
+                    api.get('/specs/'),
+                    api.get('/system/settings')
+                ]);
+                setSpecs(specsRes.data);
+                setSystemSettings(settingsRes.data);
             } catch (err) {
-                console.error("Failed to load specs for dashboard cost calculation");
+                console.error("Failed to load initial configuration data");
             }
         };
-        fetchSpecs();
+        fetchInitialData();
     }, []);
 
 
@@ -240,8 +244,11 @@ const App = () => {
             specPriceMap[s.model_name] = s.replacement_cost || 0;
         });
         
-        const FALLBACK_COST_LAPTOP = 30000;
-        const FALLBACK_COST_DESKTOP = 25000;
+        // Dynamic weights & fallbacks from database
+        const warnMult = systemSettings?.warning_multiplier ?? 0.10;
+        const critMult = systemSettings?.critical_multiplier ?? 1.0;
+        const fallLap = systemSettings?.fallback_laptop_cost ?? 30000;
+        const fallDesk = systemSettings?.fallback_desktop_cost ?? 25000;
 
         assets.forEach(asset => {
             const health = getEffectiveHealthScore(asset);
@@ -249,15 +256,15 @@ const App = () => {
             
             // If cost missing, try to guess fallback based on device type
             if (!cost) {
-                if (asset.device_type === 'laptop') cost = FALLBACK_COST_LAPTOP;
-                else if (asset.device_type === 'desktop') cost = FALLBACK_COST_DESKTOP;
+                if (asset.device_type === 'laptop') cost = fallLap;
+                else if (asset.device_type === 'desktop') cost = fallDesk;
                 else cost = 0;
             }
 
             if (health === 'Critical') {
-                calculatedRisk += cost;
+                calculatedRisk += (cost * critMult);
             } else if (health === 'Warning') {
-                calculatedRisk += (cost * 0.10);
+                calculatedRisk += (cost * warnMult);
             }
         });
         
@@ -273,7 +280,7 @@ const App = () => {
             fleetHealth, attention, risk,
             laptops: laptopCount, desktops: desktopCount, stale
         };
-    }, [assets, specs]);
+    }, [assets, specs, systemSettings]);
 
     const pieData = [
         { name: 'Healthy', value: stats.healthy },

@@ -19,21 +19,26 @@ const SystemConfig = () => {
     
     // Retraining State
     const [isRetraining, setIsRetraining] = useState(false);
+    
+    // System Settings State
+    const [systemSettings, setSystemSettings] = useState(null);
 
     // Fetch Data
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [specsRes, statsRes, logsRes, archivedRes] = await Promise.all([
+            const [specsRes, statsRes, logsRes, archivedRes, settingsRes] = await Promise.all([
                 axios.get(`${API_BASE_URL}/specs/`),
                 axios.get(`${API_BASE_URL}/specs/stats`),
                 axios.get(`${API_BASE_URL}/logs/?limit=20`),
-                axios.get(`${API_BASE_URL}/assets/?archived=true`)
+                axios.get(`${API_BASE_URL}/assets/?archived=true`),
+                axios.get(`${API_BASE_URL}/system/settings`)
             ]);
             setSpecs(specsRes.data);
             setStats(statsRes.data);
             setLogs(logsRes.data);
             setArchivedAssets(archivedRes.data);
+            setSystemSettings(settingsRes.data);
         } catch (error) {
             console.error("Failed to fetch config data:", error);
             showNotification('error', "Failed to load system configuration.");
@@ -154,6 +159,22 @@ const SystemConfig = () => {
             setIsRetraining(false);
         }
     };
+    
+    const handleSettingsChange = (e) => {
+        const { name, value } = e.target;
+        setSystemSettings(prev => ({ ...prev, [name]: parseFloat(value) || 0 }));
+    };
+
+    const handleSaveSettings = async () => {
+        try {
+            await axios.put(`${API_BASE_URL}/system/settings`, systemSettings);
+            showNotification('success', 'Financial risk parameters updated successfully. Dashboard forecasts will reflect the new logic.');
+            fetchData();
+        } catch (error) {
+            console.error("Settings save failed:", error);
+            showNotification('error', "Failed to update system settings.");
+        }
+    };
 
     const generics = specs.filter(s => s.is_generic);
     const models = specs.filter(s => !s.is_generic);
@@ -242,6 +263,63 @@ const SystemConfig = () => {
                 <p className="mt-3 text-sm text-slate-400 px-4">
                     * These fallbacks are applied automatically when a specific model match is not found.
                 </p>
+            </section>
+            
+            {/* Financial Risk Parameters Section */}
+            <section className="mb-12">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="p-2 bg-green-100 text-green-600 rounded-lg">
+                        <Calculator size={20} />
+                    </div>
+                    <h3 className="text-xl font-black text-slate-800 uppercase tracking-wide">Financial Risk Parameters</h3>
+                </div>
+                {systemSettings && (
+                    <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Warning Multiplier</label>
+                                <input 
+                                    type="number" step="0.01" name="warning_multiplier" 
+                                    value={systemSettings.warning_multiplier} onChange={handleSettingsChange} 
+                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none" 
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1">e.g., 0.1 = 10% of unit price</p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Critical Multiplier</label>
+                                <input 
+                                    type="number" step="0.01" name="critical_multiplier" 
+                                    value={systemSettings.critical_multiplier} onChange={handleSettingsChange} 
+                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none" 
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1">e.g., 1.0 = 100% of unit price</p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Laptop Fallback (PHP)</label>
+                                <input 
+                                    type="number" name="fallback_laptop_cost" 
+                                    value={systemSettings.fallback_laptop_cost} onChange={handleSettingsChange} 
+                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none" 
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1">If model price is missing</p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Desktop Fallback (PHP)</label>
+                                <input 
+                                    type="number" name="fallback_desktop_cost" 
+                                    value={systemSettings.fallback_desktop_cost} onChange={handleSettingsChange} 
+                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none" 
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1">If model price is missing</p>
+                            </div>
+                        </div>
+                        <div className="mt-6 flex justify-end">
+                            <button onClick={handleSaveSettings} className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-xl font-bold uppercase tracking-wider hover:bg-green-600 transition shadow-lg shadow-slate-200">
+                                <Save size={18} /> Save Parameters
+                            </button>
+                        </div>
+                    </div>
+                )}
             </section>
 
             {/* Manufacturer Specs Library */}

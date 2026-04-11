@@ -284,9 +284,30 @@ def update_asset(asset_id: str, obj_in: AssetUpdate, db: Session = Depends(get_d
         if update_data['initial_age'] < 0:
              raise HTTPException(status_code=400, detail="Initial age cannot be negative.")
 
+        if 'asset_id' in update_data and update_data['asset_id'] is not None:
+            new_normalized_id = normalize_asset_id(update_data['asset_id'])
+            if not new_normalized_id:
+                raise HTTPException(status_code=400, detail="Asset ID cannot be empty.")
+            if new_normalized_id != normalized_id:
+                existing = db.query(Asset).filter(func.upper(Asset.asset_id) == new_normalized_id).first()
+                if existing:
+                    raise HTTPException(status_code=400, detail="New Asset ID already exists.")
+            update_data['asset_id'] = new_normalized_id
+
+        if 'model_name' in update_data and update_data['model_name'] is not None:
+            if update_data['model_name'] != asset.model_name:
+                all_specs = db.query(Spec).all()
+                spec = match_asset_to_spec(update_data['model_name'], all_specs)
+                if spec:
+                    update_data['model_name'] = spec.model_name
+                    update_data['is_generic'] = False
+                    update_data['device_type'] = spec.device_type
+                else:
+                    update_data['is_generic'] = True
+
     for field, value in update_data.items():
         setattr(asset, field, value)
-    log = SystemLog(action_type="UPDATE", entity_type="ASSET", entity_id=asset_id, details=f"Asset updated. Override: {obj_in.override_score}" if obj_in.override_score else "Asset data updated.")
+        log = SystemLog(action_type="UPDATE", entity_type="ASSET", entity_id=asset.asset_id, details=f"Asset updated. Override: {obj_in.override_score}" if obj_in.override_score else "Asset data updated.")
     db.add(log)
     db.commit()
     db.refresh(asset)

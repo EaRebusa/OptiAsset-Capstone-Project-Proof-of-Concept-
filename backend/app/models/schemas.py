@@ -63,3 +63,13 @@ class SystemLog(Base):
     entity_type = Column(String, index=True) # SPEC, ASSET
     entity_id = Column(String, index=True)   # Model Name or Asset ID
     details = Column(String)                 # Description of the change
+
+class SystemSettings(Base):
+    """Global configuration for financial forecasting and logic."""
+    __tablename__ = "system_settings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    warning_multiplier = Column(Float, default=0.10)
+    critical_multiplier = Column(Float, default=1.0)
+    fallback_laptop_cost = Column(Float, default=30000.0)
+    fallback_desktop_cost = Column(Float, default=25000.0)

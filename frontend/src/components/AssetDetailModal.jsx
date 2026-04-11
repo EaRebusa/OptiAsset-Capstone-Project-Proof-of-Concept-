@@ -78,8 +78,8 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
 
     const validateForm = () => {
         const temp = parseFloat(formData.current_temp);
-        if (isNaN(temp) || temp < -10 || temp > 120) {
-            return "Temperature must be between -10°C and 120°C.";
+        if (isNaN(temp) || temp < 10 || temp > 120) {
+            return "Temperature must be between 10°C and 120°C.";
         }
 
         const usage = parseFloat(formData.current_usage);
@@ -88,8 +88,8 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
         }
 
         const maint = parseInt(formData.maint_score);
-        if (isNaN(maint) || maint < 0 || maint > 10) {
-            return "Maintenance Score must be between 0 and 10.";
+        if (isNaN(maint) || maint < 1 || maint > 10) {
+            return "Maintenance Score must be between 1 and 10.";
         }
 
         const repairs = parseInt(formData.repairs);
@@ -189,14 +189,17 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
                                     isEditing={isEditing}
                                     onChange={handleInputChange}
                                     type="number"
+                                    min="0"
                                 />
                                 <EditableField
-                                    label="Maint. Score (0-10)"
+                                    label="Maint. Score (1-10)"
                                     name="maint_score"
                                     value={formData.maint_score}
                                     isEditing={isEditing}
                                     onChange={handleInputChange}
                                     type="number"
+                                    min="1"
+                                    max="10"
                                 />
                             </div>
                         </div>
@@ -214,6 +217,8 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
                                     onChange={handleInputChange}
                                     type="number"
                                     highlight={formData.current_temp > 65}
+                                    min="10"
+                                    max="120"
                                 />
                                 <EditableField
                                     label="Usage (hours/week)"
@@ -222,6 +227,8 @@ const AssetDetailModal = ({ asset, onClose, onSave }) => {
                                     isEditing={isEditing}
                                     onChange={handleInputChange}
                                     type="number"
+                                    min="0"
+                                    max="168"
                                 />
                             </div>
                         </div>
@@ -318,7 +325,7 @@ const DetailItem = ({ label, value, tooltipText }) => (
 );
 
 
-const EditableField = ({ label, name, value, isEditing, onChange, type = "text", highlight = false, displayValue, tooltipText }) => (
+const EditableField = ({ label, name, value, isEditing, onChange, type = "text", highlight = false, displayValue, tooltipText, min, max }) => (
     <div>
         <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{label}</p>
         {isEditing ? (
@@ -327,6 +334,8 @@ const EditableField = ({ label, name, value, isEditing, onChange, type = "text",
                 name={name}
                 value={value}
                 onChange={onChange}
+                min={min}
+                max={max}
                 className="w-full p-2 bg-white border border-slate-200 rounded-lg text-lg font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             />
         ) : (

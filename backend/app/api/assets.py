@@ -10,6 +10,7 @@ from app.db.session import get_db, SessionLocal
 from app.models.schemas import Asset, Spec, SystemLog
 from app.schemas.asset import AssetResponse, AssetUpdate, AssetCreate, AssetBatchDelete, AssetBatchSoftDelete
 from app.core.engine import engine
+from app.core.matcher import match_asset_to_spec
 
 router = APIRouter(prefix="/assets", tags=["Assets"])
 
@@ -106,17 +107,20 @@ def create_asset(asset_in: AssetCreate, db: Session = Depends(get_db)):
     is_generic = False
     resolved_device_type = asset_in.device_type
     
-    spec = db.query(Spec).filter(Spec.model_name == asset_in.model_name).first()
+    all_specs = db.query(Spec).all()
+    spec = match_asset_to_spec(asset_in.model_name, all_specs)
+    
     if spec:
+        asset_in.model_name = spec.model_name # HEAL AT SOURCE
         # If we have a spec, prefer its device type if user didn't provide one
         if not resolved_device_type:
             resolved_device_type = spec.device_type
     else:
         # Fallback Logic
         if asset_in.device_type == "laptop":
-            spec = db.query(Spec).filter(Spec.model_name == "Generic Laptop").first()
+            spec = next((s for s in all_specs if s.model_name == "Generic Laptop"), None)
         elif asset_in.device_type == "desktop":
-            spec = db.query(Spec).filter(Spec.model_name == "Generic Desktop").first()
+            spec = next((s for s in all_specs if s.model_name == "Generic Desktop"), None)
         
         if spec:
             is_generic = True
@@ -171,9 +175,7 @@ async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
     logs = []
     processed_count = 0
     
-    # Pre-fetch generic specs to avoid repeated queries
-    generic_laptop = db.query(Spec).filter(Spec.model_name == "Generic Laptop").first()
-    generic_desktop = db.query(Spec).filter(Spec.model_name == "Generic Desktop").first()
+    all_specs = db.query(Spec).all()
     
     for row in data:
         asset_id = normalize_asset_id(row.get('asset_id'))
@@ -203,9 +205,10 @@ async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
         else:
             # Create new
             # Try to infer device type if missing
+            spec = match_asset_to_spec(incoming_model, all_specs)
+            if spec:
+                incoming_model = spec.model_name # HEAL AT SOURCE
             if not incoming_type:
-                # Basic heuristic check if model exists in spec
-                spec = db.query(Spec).filter(Spec.model_name == incoming_model).first()
                 if spec:
                     incoming_type = spec.device_type
             
@@ -242,18 +245,23 @@ def run_single_diagnostic(asset_id: str, db: Session = Depends(get_db)):
     if not asset or not asset.is_active:
         raise HTTPException(status_code=404, detail="Asset not found")
     
-    spec = db.query(Spec).filter(Spec.model_name == asset.model_name).first()
+    all_specs = db.query(Spec).all()
+    spec = match_asset_to_spec(asset.model_name, all_specs)
+    
     if not spec:
         # Robust fallback
         if asset.device_type and "laptop" in asset.device_type.lower(): 
-            spec = db.query(Spec).filter(Spec.model_name == "Generic Laptop").first()
+            spec = next((s for s in all_specs if s.model_name == "Generic Laptop"), None)
         elif asset.device_type and "desktop" in asset.device_type.lower(): 
-            spec = db.query(Spec).filter(Spec.model_name == "Generic Desktop").first()
+            spec = next((s for s in all_specs if s.model_name == "Generic Desktop"), None)
         
         if spec: 
             asset.is_generic = True
         else: 
             raise HTTPException(status_code=400, detail="Manufacturer specs missing for this model.")
+    else:
+        asset.model_name = spec.model_name # HEAL ON DIAGNOSIS
+        asset.is_generic = False
             
     features = engine.prepare_features(asset, spec)
     label, cid = engine.predict_health(features)
@@ -341,19 +349,25 @@ async def trigger_bulk_diagnostic(background_tasks: BackgroundTasks):
         try:
             # Only diagnose active assets
             assets = db.query(Asset).filter(Asset.is_active == True).all()
+            all_specs = db.query(Spec).all()
+            
             for asset in assets:
-                spec = db.query(Spec).filter(Spec.model_name == asset.model_name).first()
+                spec = match_asset_to_spec(asset.model_name, all_specs)
+                
                 if not spec:
                     # Fallback logic
                     if asset.device_type and "laptop" in asset.device_type.lower():
-                        spec = db.query(Spec).filter(Spec.model_name == "Generic Laptop").first()
+                        spec = next((s for s in all_specs if s.model_name == "Generic Laptop"), None)
                     elif asset.device_type and "desktop" in asset.device_type.lower():
-                        spec = db.query(Spec).filter(Spec.model_name == "Generic Desktop").first()
+                        spec = next((s for s in all_specs if s.model_name == "Generic Desktop"), None)
                     
                     if spec:
                         asset.is_generic = True
                     else:
                         continue # Skip if no spec found
+                else:
+                    asset.model_name = spec.model_name # AUTO-HEAL ENTIRE FLEET
+                    asset.is_generic = False
 
                 features = engine.prepare_features(asset, spec)
                 label, cid = engine.predict_health(features)

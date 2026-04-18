@@ -8,7 +8,7 @@ backend_root = Path(__file__).resolve().parent.parent
 sys.path.append(str(backend_root))
 
 from app.db.session import SessionLocal, engine
-from app.models.schemas import Spec, Asset, Base
+from app.models.schemas import Spec, Asset, SystemSettings, SystemLog, Base
 
 def setup_cold_start():
     print("🚀 [DEMO SETUP] Initializing Cold Start environment...")
@@ -33,21 +33,18 @@ def setup_cold_start():
         print("   👉 Run 'backend/generate_data.py' or 'train_model.py' first.")
         return
 
-    # 2. Database Reset (Surgical)
-    print("🧹 [1/3] Wiping existing inventory records...")
     db = SessionLocal()
     try:
-        # We drop and recreate the Asset table to ensure a clean slate
-        # This is safer than DELETE FROM because it resets auto-increment IDs
-        Asset.__table__.drop(engine)
-        Asset.__table__.create(engine)
-        print("   ✅ Assets table purged and reset.")
-    except Exception as e:
-        print(f"   ❌ Error during table reset: {e}")
-        return
+        # 2. Database Reset (Surgical)
+        print("🧹 [1/3] Wiping existing inventory and system logs...")
+        Asset.__table__.drop(engine, checkfirst=True)
+        Asset.__table__.create(engine, checkfirst=True)
+        
+        SystemLog.__table__.drop(engine, checkfirst=True)
+        SystemLog.__table__.create(engine, checkfirst=True)
+        print("   ✅ Assets and Logs tables purged and reset.")
 
-    # 3. Seed Specs Library (Required for ingestion)
-    try:
+        # 3. Seed Specs Library (Required for ingestion)
         print("📚 [2/3] Seeding Specs Library baselines...")
         
         # Define baseline specs for demo devices with PROCUREMENT COSTS
@@ -80,6 +77,15 @@ def setup_cold_start():
                 if exists.replacement_cost == 0:
                     exists.replacement_cost = s["cost"]
                     added_count += 1 # Count updates too
+                    
+        # Seed Default Financial Risk Settings
+        if not db.query(SystemSettings).first():
+            db.add(SystemSettings(
+                warning_multiplier=0.10,
+                critical_multiplier=1.0,
+                fallback_laptop_cost=30000.0,
+                fallback_desktop_cost=25000.0
+            ))
         
         db.commit()
         print(f"   ✅ Specs Library ready. ({added_count} new/updated specs)")

@@ -26,11 +26,13 @@ def train():
         data = []
         for asset, spec in query:
             # We use initial_age for training baseline
+            # Calculate ratio (using max to prevent division by zero just in case)
+            age_ratio = asset.initial_age / max(1, spec.warranty_months)
             temp_ratio = asset.current_temp / spec.temp_norm
             usage_ratio = asset.current_usage / spec.usage_norm
 
             data.append([
-                asset.initial_age,
+                age_ratio,
                 temp_ratio,
                 usage_ratio,
                 asset.maint_score,

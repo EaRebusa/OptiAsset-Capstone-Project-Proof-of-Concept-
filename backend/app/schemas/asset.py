@@ -56,6 +56,7 @@ class AssetResponse(AssetBase):
     is_generic: bool = False # Added is_generic
     is_active: bool = True
     deletion_reason: Optional[str] = None
+    last_updated: Optional[datetime] = None
 
     class Config:
         from_attributes = True

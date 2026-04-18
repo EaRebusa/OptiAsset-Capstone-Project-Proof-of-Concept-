@@ -61,8 +61,8 @@ class ScoringEngine:
         risk_scores = []
 
         for i, center in enumerate(centroids):
-            # Features: [age, temp_r, usage_r, maint, repairs]
-            risk_index = center[1] + center[2] + center[4] - (center[3] / 10)
+            # Features: [age_r, temp_r, usage_r, maint, repairs]
+            risk_index = center[0] + center[1] + center[2] + center[4] - (center[3] / 10)
             risk_scores.append((i, risk_index))
 
         sorted_clusters = sorted(risk_scores, key=lambda x: x[1])
@@ -82,11 +82,12 @@ class ScoringEngine:
     def prepare_features(self, asset, spec):
         """Feature Engineering: Converts telemetry to dimensionless ratios."""
         current_age = self.calculate_current_age(asset.initial_age, asset.created_at)
+        age_ratio = current_age / max(1, spec.warranty_months)
         temp_ratio = asset.current_temp / spec.temp_norm
         usage_ratio = asset.current_usage / spec.usage_norm
 
         return np.array([
-            current_age,
+            age_ratio,
             temp_ratio,
             usage_ratio,
             asset.maint_score,

@@ -31,7 +31,11 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
             
             const matchesAge = filterAge ? asset.current_age > 36 : true;
 
-            const isDesktop = asset.device_type === 'desktop' || asset.model_name.toLowerCase().includes('desktop') || asset.model_name.includes('OptiPlex') || asset.model_name.includes('ProDesk');
+            const isDesktop = asset.device_type === 'desktop' || 
+                              (asset.model_name && asset.model_name.toLowerCase().includes('desktop')) || 
+                              (asset.model_name && asset.model_name.includes('OptiPlex')) || 
+                              (asset.model_name && asset.model_name.includes('ProDesk'));
+                              
             const deviceType = isDesktop ? 'Desktop' : 'Laptop';
             const matchesDeviceType = filterDeviceType === 'All' || deviceType === filterDeviceType;
             
@@ -207,9 +211,9 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
                         const tempRising = asset.current_temp > 75; 
                         
                         const isDesktop = asset.device_type === 'desktop' || 
-                                          asset.model_name.toLowerCase().includes('desktop') || 
-                                          asset.model_name.includes('OptiPlex') || 
-                                          asset.model_name.includes('ProDesk');
+                                          (asset.model_name && asset.model_name.toLowerCase().includes('desktop')) || 
+                                          (asset.model_name && asset.model_name.includes('OptiPlex')) || 
+                                          (asset.model_name && asset.model_name.includes('ProDesk'));
 
                         return (
                             <tr key={asset.id} className={`hover:bg-slate-50/50 transition-colors group ${selectedAssets.includes(asset.asset_id) ? 'bg-blue-50' : ''}`}>
@@ -266,6 +270,13 @@ const Inventory = ({ filteredAssets, handleDiagnose, diagnosing, getStatusColor,
                                             }>
                                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1 cursor-help border-b border-dotted border-slate-400">
                                                     (Manual)
+                                                </span>
+                                            </Tooltip>
+                                        )}
+                                        {asset.is_generic && (
+                                            <Tooltip text="This asset relies on generic fallback specifications. Consider adding a specific baseline for this model.">
+                                                <span className="px-2 py-0.5 bg-purple-100 text-purple-700 border border-purple-200 rounded text-[9px] font-black uppercase tracking-widest cursor-help mt-1">
+                                                    Generic Baseline
                                                 </span>
                                             </Tooltip>
                                         )}

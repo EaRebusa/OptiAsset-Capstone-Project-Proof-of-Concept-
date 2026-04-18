@@ -20,6 +20,10 @@ const SystemConfig = () => {
     // Retraining State
     const [isRetraining, setIsRetraining] = useState(false);
     
+    // Purge State
+    const [showPurgeConfirm, setShowPurgeConfirm] = useState(false);
+    const [purgeIncludeArchived, setPurgeIncludeArchived] = useState(false);
+    
     // System Settings State
     const [systemSettings, setSystemSettings] = useState(null);
 
@@ -157,6 +161,19 @@ const SystemConfig = () => {
             showNotification('error', error.response?.data?.detail || "Failed to retrain model.");
         } finally {
             setIsRetraining(false);
+        }
+    };
+
+    const handlePurgeInventory = async () => {
+        try {
+            const response = await axios.post(`${API_BASE_URL}/assets/purge?include_archived=${purgeIncludeArchived}`);
+            showNotification('success', response.data.message);
+            setShowPurgeConfirm(false);
+            setPurgeIncludeArchived(false);
+            fetchData();
+        } catch (error) {
+            console.error("Purge failed:", error);
+            showNotification('error', "Failed to purge inventory.");
         }
     };
     
@@ -481,6 +498,32 @@ const SystemConfig = () => {
                 </div>
             </section>
 
+            {/* Danger Zone Section */}
+            <section className="mb-12 mt-12 pt-12 border-t-2 border-red-100 border-dashed">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="p-2 bg-red-100 text-red-600 rounded-lg">
+                        <AlertTriangle size={20} />
+                    </div>
+                    <h3 className="text-xl font-black text-slate-800 uppercase tracking-wide text-red-600">Danger Zone</h3>
+                </div>
+                <div className="bg-white p-8 rounded-3xl border border-red-200 shadow-sm">
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                        <div>
+                            <h4 className="text-lg font-black text-slate-800">Purge Fleet Inventory</h4>
+                            <p className="text-sm text-slate-500 mt-1">
+                                Permanently delete assets from the database to start fresh. This action cannot be undone. System logs and Manufacturer specs will remain intact.
+                            </p>
+                        </div>
+                        <button 
+                            onClick={() => setShowPurgeConfirm(true)}
+                            className="flex items-center gap-2 px-6 py-3 bg-red-50 text-red-600 border border-red-200 rounded-xl font-bold uppercase tracking-wider hover:bg-red-600 hover:text-white transition shadow-sm whitespace-nowrap"
+                        >
+                            <Trash2 size={18} /> Purge Inventory
+                        </button>
+                    </div>
+                </div>
+            </section>
+
             {/* Add/Edit Modal */}
             {showModal && (
                 <SpecModal 
@@ -515,6 +558,50 @@ const SystemConfig = () => {
                                 className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold uppercase tracking-wider hover:bg-red-700 transition shadow-lg shadow-red-200"
                             >
                                 Confirm Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* Purge Confirmation Modal */}
+            {showPurgeConfirm && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+                    <div className="bg-white p-8 rounded-3xl shadow-2xl max-w-md w-full">
+                        <div className="flex flex-col items-center text-center mb-6">
+                            <div className="p-4 bg-red-50 text-red-600 rounded-full mb-4">
+                                <AlertTriangle size={32} />
+                            </div>
+                            <h3 className="text-2xl font-black text-slate-800 mb-2">Purge Inventory?</h3>
+                            <p className="text-slate-500 font-medium mb-6">
+                                This will permanently delete assets from your database. This action is irreversible.
+                            </p>
+                            
+                            <label className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100 transition w-full text-left border border-slate-200">
+                                <input
+                                    type="checkbox"
+                                    checked={purgeIncludeArchived}
+                                    onChange={(e) => setPurgeIncludeArchived(e.target.checked)}
+                                    className="w-5 h-5 text-red-600 rounded focus:ring-red-500 border-gray-300"
+                                />
+                                <div>
+                                    <span className="font-bold text-slate-700 text-sm block">Include Archived Assets</span>
+                                    <span className="text-xs text-slate-500">If checked, historic archived assets will also be wiped.</span>
+                                </div>
+                            </label>
+                        </div>
+                        <div className="flex gap-4">
+                            <button 
+                                onClick={() => { setShowPurgeConfirm(false); setPurgeIncludeArchived(false); }}
+                                className="flex-1 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-xl font-bold uppercase tracking-wider hover:bg-slate-50 transition"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={handlePurgeInventory}
+                                className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold uppercase tracking-wider hover:bg-red-700 transition shadow-lg shadow-red-200"
+                            >
+                                Confirm Purge
                             </button>
                         </div>
                     </div>

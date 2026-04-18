@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.db.session import get_db
-from app.models.schemas import Asset, Spec
+from app.models.schemas import Asset, Spec, SystemLog
 from app.core.engine import engine # Import engine for age calc
 from fpdf import FPDF
 import pandas as pd
@@ -252,6 +252,29 @@ def get_monthly_summary(db: Session = Depends(get_db)):
     
     response = StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf")
     response.headers["Content-Disposition"] = f"attachment; filename=OptiAsset_Monthly_Report_{datetime.now().strftime('%Y_%m')}.pdf"
+    return response
+
+@router.get("/export-logs", response_class=StreamingResponse)
+def export_system_logs(db: Session = Depends(get_db)):
+    """
+    Exports the entire audit trail as a CSV for compliance and future ML training data.
+    """
+    logs = db.query(SystemLog).order_by(SystemLog.timestamp.desc()).all()
+    data = []
+    for log in logs:
+        data.append({
+            "Log ID": log.id,
+            "Timestamp": log.timestamp.strftime("%Y-%m-%d %H:%M:%S") if log.timestamp else None,
+            "Action Type": log.action_type,
+            "Entity Type": log.entity_type,
+            "Entity ID": log.entity_id,
+            "Details": log.details
+        })
+    df = pd.DataFrame(data)
+    stream = io.StringIO()
+    df.to_csv(stream, index=False)
+    response = StreamingResponse(iter([stream.getvalue()]), media_type="text/csv")
+    response.headers["Content-Disposition"] = f"attachment; filename=OptiAsset_Audit_Logs_{datetime.now().strftime('%Y_%m_%d')}.csv"
     return response
 
 @router.get("/charts/health-distribution")

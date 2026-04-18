@@ -42,6 +42,9 @@ class AssetBatchSoftDelete(BaseModel):
     asset_ids: List[str]
     reason: str
 
+class AssetBatchRestore(BaseModel):
+    asset_ids: List[str]
+
 class AssetResponse(AssetBase):
     id: int
     created_at: datetime

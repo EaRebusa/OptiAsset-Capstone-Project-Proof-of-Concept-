@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Download, FileText, BarChart2, PieChart as PieIcon, Activity, Calendar, ArrowRight } from 'lucide-react';
+import { Download, FileText, BarChart2, PieChart as PieIcon, Activity, Calendar, ArrowRight, Clock } from 'lucide-react';
 import {
     BarChart,
     Bar,
@@ -68,6 +68,9 @@ const Reporting = () => {
             } else if (reportType === 'export_assets') {
                 url = `${API_BASE_URL}/assets/export`;
                 filename = `OptiAsset_Fleet_Export_${new Date().toISOString().slice(0, 10)}.csv`;
+            } else if (reportType === 'export_logs') {
+                url = `${API_BASE_URL}/reports/export-logs`;
+                filename = `OptiAsset_Audit_Logs_${new Date().toISOString().slice(0, 10)}.csv`;
             }
 
             if (!url) return;
@@ -108,7 +111,7 @@ const Reporting = () => {
                 </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Monthly Summary Card */}
                 <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-md transition-shadow group">
                     <div className="flex items-start justify-between mb-6">
@@ -155,6 +158,30 @@ const Reporting = () => {
                     >
                         {loading ? <Activity className="animate-spin" size={16}/> : <Download size={16} />}
                         Export Raw Data (CSV)
+                    </button>
+                </div>
+
+                {/* Audit Logs Export Card */}
+                <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-md transition-shadow group">
+                    <div className="flex items-start justify-between mb-6">
+                        <div className="p-3 bg-purple-50 text-purple-600 rounded-2xl group-hover:bg-purple-600 group-hover:text-white transition-colors">
+                            <Clock size={24} />
+                        </div>
+                        <div className="px-3 py-1 bg-slate-100 rounded-full text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                            Data Scientist
+                        </div>
+                    </div>
+                    <h3 className="text-lg font-black text-slate-800 mb-2">Audit Trail & Event Logs</h3>
+                    <p className="text-sm text-slate-500 mb-8 leading-relaxed">
+                        Chronological history of all system events, manual overrides, and archiving reasons. Crucial for compliance audits and future predictive Machine Learning training.
+                    </p>
+                    <button 
+                        onClick={() => handleDownloadReport('export_logs')}
+                        disabled={loading}
+                        className="w-full py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-bold text-sm hover:border-purple-300 hover:bg-purple-50 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {loading ? <Activity className="animate-spin" size={16}/> : <Download size={16} />}
+                        Export Audit Trail (CSV)
                     </button>
                 </div>
             </div>

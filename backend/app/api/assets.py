@@ -8,9 +8,8 @@ import io
 from datetime import datetime
 from app.db.session import get_db, SessionLocal
 from app.models.schemas import Asset, Spec, SystemLog
-from app.schemas.asset import AssetResponse, AssetUpdate, AssetCreate, AssetBatchDelete, AssetBatchSoftDelete
+from app.schemas.asset import AssetResponse, AssetUpdate, AssetCreate, AssetBatchDelete, AssetBatchSoftDelete, AssetBatchRestore
 from app.core.engine import engine
-from app.core.matcher import match_asset_to_spec
 
 router = APIRouter(prefix="/assets", tags=["Assets"])
 
@@ -93,10 +92,6 @@ def create_asset(asset_in: AssetCreate, db: Session = Depends(get_db)):
     if not normalized_id:
         raise HTTPException(status_code=400, detail="Asset ID cannot be empty.")
 
-    # Guardrail: Prevent negative age
-    if asset_in.initial_age < 0:
-        raise HTTPException(status_code=400, detail="Initial age cannot be negative. 0 is allowed for new assets.")
-
     existing_asset = db.query(Asset).filter(func.upper(Asset.asset_id) == normalized_id).first()
     if existing_asset:
         if not existing_asset.is_active:
@@ -107,20 +102,17 @@ def create_asset(asset_in: AssetCreate, db: Session = Depends(get_db)):
     is_generic = False
     resolved_device_type = asset_in.device_type
     
-    all_specs = db.query(Spec).all()
-    spec = match_asset_to_spec(asset_in.model_name, all_specs)
-    
+    spec = db.query(Spec).filter(Spec.model_name == asset_in.model_name).first()
     if spec:
-        asset_in.model_name = spec.model_name # HEAL AT SOURCE
         # If we have a spec, prefer its device type if user didn't provide one
         if not resolved_device_type:
             resolved_device_type = spec.device_type
     else:
         # Fallback Logic
         if asset_in.device_type == "laptop":
-            spec = next((s for s in all_specs if s.model_name == "Generic Laptop"), None)
+            spec = db.query(Spec).filter(Spec.model_name == "Generic Laptop").first()
         elif asset_in.device_type == "desktop":
-            spec = next((s for s in all_specs if s.model_name == "Generic Desktop"), None)
+            spec = db.query(Spec).filter(Spec.model_name == "Generic Desktop").first()
         
         if spec:
             is_generic = True
@@ -137,14 +129,7 @@ def create_asset(asset_in: AssetCreate, db: Session = Depends(get_db)):
         last_updated=asset_in.last_updated or datetime.utcnow()
     )
     db.add(new_asset)
-    
-    # Determine baseline info for logging
-    if spec:
-        baseline_info = "Generic Baseline" if is_generic else "Specific Baseline"
-    else:
-        baseline_info = "No Baseline Found"
-
-    log = SystemLog(action_type="CREATE", entity_type="ASSET", entity_id=new_asset.asset_id, details=f"Manual creation. Model: {new_asset.model_name}. ({baseline_info})")
+    log = SystemLog(action_type="CREATE", entity_type="ASSET", entity_id=new_asset.asset_id, details=f"Manual creation. Model: {new_asset.model_name}")
     db.add(log)
     try:
         db.commit()
@@ -175,7 +160,9 @@ async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
     logs = []
     processed_count = 0
     
-    all_specs = db.query(Spec).all()
+    # Pre-fetch generic specs to avoid repeated queries
+    generic_laptop = db.query(Spec).filter(Spec.model_name == "Generic Laptop").first()
+    generic_desktop = db.query(Spec).filter(Spec.model_name == "Generic Desktop").first()
     
     for row in data:
         asset_id = normalize_asset_id(row.get('asset_id'))
@@ -205,10 +192,9 @@ async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
         else:
             # Create new
             # Try to infer device type if missing
-            spec = match_asset_to_spec(incoming_model, all_specs)
-            if spec:
-                incoming_model = spec.model_name # HEAL AT SOURCE
             if not incoming_type:
+                # Basic heuristic check if model exists in spec
+                spec = db.query(Spec).filter(Spec.model_name == incoming_model).first()
                 if spec:
                     incoming_type = spec.device_type
             
@@ -245,23 +231,18 @@ def run_single_diagnostic(asset_id: str, db: Session = Depends(get_db)):
     if not asset or not asset.is_active:
         raise HTTPException(status_code=404, detail="Asset not found")
     
-    all_specs = db.query(Spec).all()
-    spec = match_asset_to_spec(asset.model_name, all_specs)
-    
+    spec = db.query(Spec).filter(Spec.model_name == asset.model_name).first()
     if not spec:
         # Robust fallback
         if asset.device_type and "laptop" in asset.device_type.lower(): 
-            spec = next((s for s in all_specs if s.model_name == "Generic Laptop"), None)
+            spec = db.query(Spec).filter(Spec.model_name == "Generic Laptop").first()
         elif asset.device_type and "desktop" in asset.device_type.lower(): 
-            spec = next((s for s in all_specs if s.model_name == "Generic Desktop"), None)
+            spec = db.query(Spec).filter(Spec.model_name == "Generic Desktop").first()
         
         if spec: 
             asset.is_generic = True
         else: 
             raise HTTPException(status_code=400, detail="Manufacturer specs missing for this model.")
-    else:
-        asset.model_name = spec.model_name # HEAL ON DIAGNOSIS
-        asset.is_generic = False
             
     features = engine.prepare_features(asset, spec)
     label, cid = engine.predict_health(features)
@@ -278,36 +259,18 @@ def update_asset(asset_id: str, obj_in: AssetUpdate, db: Session = Depends(get_d
         raise HTTPException(status_code=404, detail="Asset not found")
     
     update_data = obj_in.dict(exclude_unset=True)
-    
-    # Check for negative initial_age in updates
-    if 'initial_age' in update_data and update_data['initial_age'] is not None:
-        if update_data['initial_age'] < 0:
-             raise HTTPException(status_code=400, detail="Initial age cannot be negative.")
-
-        if 'asset_id' in update_data and update_data['asset_id'] is not None:
-            new_normalized_id = normalize_asset_id(update_data['asset_id'])
-            if not new_normalized_id:
-                raise HTTPException(status_code=400, detail="Asset ID cannot be empty.")
-            if new_normalized_id != normalized_id:
-                existing = db.query(Asset).filter(func.upper(Asset.asset_id) == new_normalized_id).first()
-                if existing:
-                    raise HTTPException(status_code=400, detail="New Asset ID already exists.")
-            update_data['asset_id'] = new_normalized_id
-
-        if 'model_name' in update_data and update_data['model_name'] is not None:
-            if update_data['model_name'] != asset.model_name:
-                all_specs = db.query(Spec).all()
-                spec = match_asset_to_spec(update_data['model_name'], all_specs)
-                if spec:
-                    update_data['model_name'] = spec.model_name
-                    update_data['is_generic'] = False
-                    update_data['device_type'] = spec.device_type
-                else:
-                    update_data['is_generic'] = True
-
     for field, value in update_data.items():
         setattr(asset, field, value)
-        log = SystemLog(action_type="UPDATE", entity_type="ASSET", entity_id=asset.asset_id, details=f"Asset updated. Override: {obj_in.override_score}" if obj_in.override_score else "Asset data updated.")
+        
+    if obj_in.override_score:
+        action_type = "OVERRIDE"
+        reason = obj_in.override_reason or "No reason provided"
+        details = f"Manual override to {obj_in.override_score}. Reason: '{reason}'"
+    else:
+        action_type = "UPDATE"
+        details = "Asset data updated."
+        
+    log = SystemLog(action_type=action_type, entity_type="ASSET", entity_id=asset_id, details=details)
     db.add(log)
     db.commit()
     db.refresh(asset)
@@ -346,6 +309,54 @@ def delete_assets_batch(payload: AssetBatchSoftDelete, db: Session = Depends(get
     db.commit()
     return {"message": f"{archived_count} assets archived."}
 
+@router.post("/batch-restore")
+def restore_assets_batch(payload: AssetBatchRestore, db: Session = Depends(get_db)):
+    """
+    Restores multiple soft-deleted assets.
+    """
+    normalized_ids = [normalize_asset_id(aid) for aid in payload.asset_ids]
+    assets = db.query(Asset).filter(func.upper(Asset.asset_id).in_(normalized_ids)).all()
+    if not assets:
+        raise HTTPException(status_code=404, detail="No matching assets found.")
+    
+    restored_count = 0
+    for asset in assets:
+        if not asset.is_active:
+            asset.is_active = True
+            asset.deletion_reason = None
+            restored_count += 1
+            
+    log = SystemLog(
+        action_type="RESTORE",
+        entity_type="ASSET",
+        entity_id="BATCH",
+        details=f"Batch restore: {restored_count} assets restored from archive."
+    )
+    db.add(log)
+    db.commit()
+    return {"message": f"{restored_count} assets restored."}
+
+@router.post("/purge")
+def purge_inventory(include_archived: bool = False, db: Session = Depends(get_db)):
+    """
+    Hard deletes assets from the database.
+    If include_archived is False, it only deletes active assets.
+    """
+    if include_archived:
+        deleted_count = db.query(Asset).delete()
+    else:
+        deleted_count = db.query(Asset).filter(Asset.is_active == True).delete()
+    
+    log = SystemLog(
+        action_type="DELETE", 
+        entity_type="ASSET", 
+        entity_id="BATCH_PURGE", 
+        details=f"Hard purged {deleted_count} assets from database. Included archived: {include_archived}"
+    )
+    db.add(log)
+    db.commit()
+    return {"message": f"Successfully purged {deleted_count} assets.", "deleted_count": deleted_count}
+
 @router.post("/{asset_id}/restore")
 def restore_asset(asset_id: str, db: Session = Depends(get_db)):
     normalized_id = normalize_asset_id(asset_id)
@@ -370,25 +381,19 @@ async def trigger_bulk_diagnostic(background_tasks: BackgroundTasks):
         try:
             # Only diagnose active assets
             assets = db.query(Asset).filter(Asset.is_active == True).all()
-            all_specs = db.query(Spec).all()
-            
             for asset in assets:
-                spec = match_asset_to_spec(asset.model_name, all_specs)
-                
+                spec = db.query(Spec).filter(Spec.model_name == asset.model_name).first()
                 if not spec:
                     # Fallback logic
                     if asset.device_type and "laptop" in asset.device_type.lower():
-                        spec = next((s for s in all_specs if s.model_name == "Generic Laptop"), None)
+                        spec = db.query(Spec).filter(Spec.model_name == "Generic Laptop").first()
                     elif asset.device_type and "desktop" in asset.device_type.lower():
-                        spec = next((s for s in all_specs if s.model_name == "Generic Desktop"), None)
+                        spec = db.query(Spec).filter(Spec.model_name == "Generic Desktop").first()
                     
                     if spec:
                         asset.is_generic = True
                     else:
                         continue # Skip if no spec found
-                else:
-                    asset.model_name = spec.model_name # AUTO-HEAL ENTIRE FLEET
-                    asset.is_generic = False
 
                 features = engine.prepare_features(asset, spec)
                 label, cid = engine.predict_health(features)

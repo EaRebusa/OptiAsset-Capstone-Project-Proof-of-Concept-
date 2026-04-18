@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import List
 
 class SystemSettingsBase(BaseModel):
     warning_multiplier: float
@@ -11,5 +12,11 @@ class SystemSettingsUpdate(SystemSettingsBase):
 
 class SystemSettingsResponse(SystemSettingsBase):
     id: int
+    class Config:
+        from_attributes = True
+
+class ClusterDataResponse(BaseModel):
+    features: List[List[float]]
+    labels: List[int]
     class Config:
         from_attributes = True

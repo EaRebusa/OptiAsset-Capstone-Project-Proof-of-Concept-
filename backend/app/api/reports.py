@@ -50,14 +50,9 @@ def generate_chart_image(data_dict, title, xlabel, ylabel, chart_type='bar', col
             
         elif chart_type == 'pie':
             # Pie chart specific safe drawing
-            filtered_labels = [l for i, l in enumerate(labels) if values[i] > 0]
-            filtered_values = [v for v in values if v > 0]
-            filtered_colors = [color[i] for i, v in enumerate(values) if v > 0] if isinstance(color, list) else color
-            
-            # Make the pie chart take up more space
-            ax.pie(filtered_values, labels=filtered_labels, autopct='%1.1f%%', startangle=90, colors=filtered_colors, textprops={'fontsize': 10})
+            ax.pie(values, labels=labels, autopct='%1.1f%%', startangle=90, colors=color)
             ax.axis('equal') 
-            ax.set_title(title, fontsize=12, fontweight='bold', pad=20)
+            ax.set_title(title, fontsize=10, fontweight='bold')
     
     plt.tight_layout()
     
@@ -210,9 +205,7 @@ def get_monthly_summary(db: Session = Depends(get_db)):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_fin:
         tmp_fin.write(fin_chart_img.getvalue())
         tmp_fin_path = tmp_fin.name
-    
-    # We will make the image a bit bigger here as well just to be sure
-    pdf.image(tmp_fin_path, x=25, w=160)
+    pdf.image(tmp_fin_path, x=50, w=100) # Centered smaller pie chart
     
     pdf.add_page()
 

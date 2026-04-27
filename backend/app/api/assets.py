@@ -189,17 +189,26 @@ async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
         
         # If updating
         if existing_asset:
-            # We want to check what changed for logs if possible, but bulk upload might not need detailed logs per item
-            existing_asset.current_temp = row.get('current_temp', existing_asset.current_temp)
-            existing_asset.current_usage = row.get('current_usage', existing_asset.current_usage)
-            existing_asset.maint_score = row.get('maint_score', existing_asset.maint_score)
-            existing_asset.repairs = row.get('repairs', existing_asset.repairs)
+            changes = []
+            telemetry_fields = ['current_temp', 'current_usage', 'maint_score', 'repairs', 'initial_age']
+            
+            for field in telemetry_fields:
+                if field in row and getattr(existing_asset, field) != row[field]:
+                    old_val = getattr(existing_asset, field)
+                    new_val = row[field]
+                    changes.append(f"{field} ({old_val} -> {new_val})")
+                    setattr(existing_asset, field, new_val)
+                    
             existing_asset.last_updated = datetime.utcnow()
             
             # If device type was missing, try to fill it now
             if not existing_asset.device_type and incoming_type:
                 existing_asset.device_type = incoming_type
                 
+            if changes:
+                log = SystemLog(action_type="UPDATE", entity_type="ASSET", entity_id=asset_id, details=f"Bulk update changes: [{', '.join(changes)}]")
+                db.add(log)
+
             logs.append({"status": "updated", "message": f"Asset {asset_id} updated."})
         else:
             # Create new
@@ -470,7 +479,7 @@ async def trigger_bulk_diagnostic(background_tasks: BackgroundTasks):
                 
                 if old_score != label and old_score != "Unscored":
                      # Log state change
-                     log = SystemLog(action_type="DIAGNOSE", entity_type="ASSET", entity_id=asset.asset_id, details=f"Health score updated during bulk run: {old_score} -> {label}")
+                     log = SystemLog(action_type="DIAGNOSE", entity_type="ASSET", entity_id=asset.asset_id, details=f"Health score updated during bulk run: {old_score} -> {label}. Context: Temp={asset.current_temp}°C, Usage={asset.current_usage}h/w, Repairs={asset.repairs}")
                      db.add(log)
 
             db.commit()

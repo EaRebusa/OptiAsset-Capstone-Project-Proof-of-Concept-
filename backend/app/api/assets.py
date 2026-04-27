@@ -92,6 +92,10 @@ def create_asset(asset_in: AssetCreate, db: Session = Depends(get_db)):
     if not normalized_id:
         raise HTTPException(status_code=400, detail="Asset ID cannot be empty.")
 
+    # Guardrail: Prevent negative age
+    if asset_in.initial_age < 0:
+        raise HTTPException(status_code=400, detail="Initial age cannot be negative. 0 is allowed for new assets.")
+
     existing_asset = db.query(Asset).filter(func.upper(Asset.asset_id) == normalized_id).first()
     if existing_asset:
         if not existing_asset.is_active:
@@ -129,7 +133,14 @@ def create_asset(asset_in: AssetCreate, db: Session = Depends(get_db)):
         last_updated=asset_in.last_updated or datetime.utcnow()
     )
     db.add(new_asset)
-    log = SystemLog(action_type="CREATE", entity_type="ASSET", entity_id=new_asset.asset_id, details=f"Manual creation. Model: {new_asset.model_name}")
+    
+    # Determine baseline info for logging
+    if spec:
+        baseline_info = "Generic Baseline" if is_generic else "Specific Baseline"
+    else:
+        baseline_info = "No Baseline Found"
+
+    log = SystemLog(action_type="CREATE", entity_type="ASSET", entity_id=new_asset.asset_id, details=f"Manual creation. Model: {new_asset.model_name}. ({baseline_info})")
     db.add(log)
     try:
         db.commit()
@@ -192,9 +203,8 @@ async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
         else:
             # Create new
             # Try to infer device type if missing
+            spec = db.query(Spec).filter(Spec.model_name == incoming_model).first()
             if not incoming_type:
-                # Basic heuristic check if model exists in spec
-                spec = db.query(Spec).filter(Spec.model_name == incoming_model).first()
                 if spec:
                     incoming_type = spec.device_type
             
@@ -243,12 +253,24 @@ def run_single_diagnostic(asset_id: str, db: Session = Depends(get_db)):
             asset.is_generic = True
         else: 
             raise HTTPException(status_code=400, detail="Manufacturer specs missing for this model.")
+    else:
+        asset.is_generic = False
             
     features = engine.prepare_features(asset, spec)
     label, cid = engine.predict_health(features)
+    
+    # Check if score changed
+    old_score = asset.health_score
     asset.health_score = label
     asset.cluster_id = cid
     db.commit()
+    
+    if old_score != label:
+         # Log state change
+         log = SystemLog(action_type="DIAGNOSE", entity_type="ASSET", entity_id=asset_id, details=f"Health score updated: {old_score} -> {label}")
+         db.add(log)
+         db.commit()
+         
     return {"asset_id": asset_id, "score": label, "cluster": cid}
 
 @router.patch("/{asset_id}", response_model=AssetResponse)
@@ -259,19 +281,59 @@ def update_asset(asset_id: str, obj_in: AssetUpdate, db: Session = Depends(get_d
         raise HTTPException(status_code=404, detail="Asset not found")
     
     update_data = obj_in.dict(exclude_unset=True)
+    
+    # Check for negative initial_age in updates
+    if 'initial_age' in update_data and update_data['initial_age'] is not None:
+        if update_data['initial_age'] < 0:
+             raise HTTPException(status_code=400, detail="Initial age cannot be negative.")
+
+        if 'asset_id' in update_data and update_data['asset_id'] is not None:
+            new_normalized_id = normalize_asset_id(update_data['asset_id'])
+            if not new_normalized_id:
+                raise HTTPException(status_code=400, detail="Asset ID cannot be empty.")
+            if new_normalized_id != normalized_id:
+                existing = db.query(Asset).filter(func.upper(Asset.asset_id) == new_normalized_id).first()
+                if existing:
+                    raise HTTPException(status_code=400, detail="New Asset ID already exists.")
+            update_data['asset_id'] = new_normalized_id
+
+        if 'model_name' in update_data and update_data['model_name'] is not None:
+            if update_data['model_name'] != asset.model_name:
+                spec = db.query(Spec).filter(Spec.model_name == update_data['model_name']).first()
+                if spec:
+                    update_data['model_name'] = spec.model_name
+                    update_data['is_generic'] = False
+                    update_data['device_type'] = spec.device_type
+                else:
+                    update_data['is_generic'] = True
+
+    changes = []
+    
+    # Detect what changed
+    if 'override_score' in update_data and update_data['override_score'] != asset.override_score:
+        if update_data['override_score']:
+            reason = update_data.get('override_reason', 'No reason provided')
+            changes.append(f"Override applied: {update_data['override_score']} ('{reason}')")
+        else:
+            changes.append(f"Override removed. Reverted to system score ({asset.health_score})")
+
+    # Detect telemetry changes
+    telemetry_fields = ['current_temp', 'current_usage', 'maint_score', 'repairs']
+    for field in telemetry_fields:
+        if field in update_data and getattr(asset, field) != update_data[field]:
+            old_val = getattr(asset, field)
+            new_val = update_data[field]
+            changes.append(f"{field}: {old_val} -> {new_val}")
+
     for field, value in update_data.items():
         setattr(asset, field, value)
         
-    if obj_in.override_score:
-        action_type = "OVERRIDE"
-        reason = obj_in.override_reason or "No reason provided"
-        details = f"Manual override to {obj_in.override_score}. Reason: '{reason}'"
-    else:
-        action_type = "UPDATE"
-        details = "Asset data updated."
+    if changes:
+        action_type = "OVERRIDE" if 'override_score' in update_data and update_data['override_score'] else "UPDATE"
+        details = " | ".join(changes)
+        log = SystemLog(action_type=action_type, entity_type="ASSET", entity_id=asset.asset_id, details=details)
+        db.add(log)
         
-    log = SystemLog(action_type=action_type, entity_type="ASSET", entity_id=asset_id, details=details)
-    db.add(log)
     db.commit()
     db.refresh(asset)
     asset.current_age = engine.calculate_current_age(asset.initial_age, asset.created_at)
@@ -286,7 +348,7 @@ def delete_asset(asset_id: str, reason: str = "Manual Deletion", db: Session = D
     
     asset.is_active = False
     asset.deletion_reason = reason
-    log = SystemLog(action_type="ARCHIVE", entity_type="ASSET", entity_id=asset_id, details=f"Asset archived. Reason: {reason}")
+    log = SystemLog(action_type="ARCHIVE", entity_type="ASSET", entity_id=asset_id, details=f"Asset archived. Reason: '{reason}'")
     db.add(log)
     db.commit()
     return {"message": f"Asset {asset_id} archived."}
@@ -304,7 +366,7 @@ def delete_assets_batch(payload: AssetBatchSoftDelete, db: Session = Depends(get
             asset.is_active = False
             asset.deletion_reason = payload.reason
             archived_count += 1
-    log = SystemLog(action_type="ARCHIVE", entity_type="ASSET", entity_id="BATCH", details=f"Batch archive: {archived_count} assets hidden. Reason: {payload.reason}")
+    log = SystemLog(action_type="ARCHIVE", entity_type="ASSET", entity_id="BATCH", details=f"Batch archive: {archived_count} assets hidden. Reason: '{payload.reason}'")
     db.add(log)
     db.commit()
     return {"message": f"{archived_count} assets archived."}
@@ -335,27 +397,6 @@ def restore_assets_batch(payload: AssetBatchRestore, db: Session = Depends(get_d
     db.add(log)
     db.commit()
     return {"message": f"{restored_count} assets restored."}
-
-@router.post("/purge")
-def purge_inventory(include_archived: bool = False, db: Session = Depends(get_db)):
-    """
-    Hard deletes assets from the database.
-    If include_archived is False, it only deletes active assets.
-    """
-    if include_archived:
-        deleted_count = db.query(Asset).delete()
-    else:
-        deleted_count = db.query(Asset).filter(Asset.is_active == True).delete()
-    
-    log = SystemLog(
-        action_type="DELETE", 
-        entity_type="ASSET", 
-        entity_id="BATCH_PURGE", 
-        details=f"Hard purged {deleted_count} assets from database. Included archived: {include_archived}"
-    )
-    db.add(log)
-    db.commit()
-    return {"message": f"Successfully purged {deleted_count} assets.", "deleted_count": deleted_count}
 
 @router.post("/{asset_id}/restore")
 def restore_asset(asset_id: str, db: Session = Depends(get_db)):
@@ -397,8 +438,18 @@ async def trigger_bulk_diagnostic(background_tasks: BackgroundTasks):
 
                 features = engine.prepare_features(asset, spec)
                 label, cid = engine.predict_health(features)
+                
+                # Check for state changes in bulk diagnose too
+                old_score = asset.health_score
+                
                 asset.health_score = label
                 asset.cluster_id = cid
+                
+                if old_score != label and old_score != "Unscored":
+                     # Log state change
+                     log = SystemLog(action_type="DIAGNOSE", entity_type="ASSET", entity_id=asset.asset_id, details=f"Health score updated during bulk run: {old_score} -> {label}")
+                     db.add(log)
+
             db.commit()
         except Exception as e:
             print(f"Bulk Diagnostic Error: {e}") # Debugging log

@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import {
     PieChart, Pie, Cell, ResponsiveContainer,
-    Tooltip
+    Tooltip, Sector
 } from 'recharts';
 import BulkUpload from './components/BulkUpload';
 import SystemConfig from './components/SystemConfig';
@@ -77,9 +77,10 @@ const App = () => {
     const [diagnosing, setDiagnosing] = useState(null);
     const [selectedAsset, setSelectedAsset] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [activePieIndex, setActivePieIndex] = useState(null);
     const [specs, setSpecs] = useState([]); // Need specs for cost calculations
     const [systemSettings, setSystemSettings] = useState(null);
+    const [activeHealthIndex, setActiveHealthIndex] = useState(null);
+    const [activeDeviceIndex, setActiveDeviceIndex] = useState(null);
 
     // --- Effects ---
 
@@ -109,10 +110,10 @@ const App = () => {
             try {
                 const [specsRes, settingsRes] = await Promise.all([
                     api.get('/specs/'),
-                    api.get('/system/settings')
+                    api.get('/system/settings').catch(() => ({ data: null }))
                 ]);
                 setSpecs(specsRes.data);
-                setSystemSettings(settingsRes.data);
+                if(settingsRes.data) setSystemSettings(settingsRes.data);
             } catch (err) {
                 console.error("Failed to load initial configuration data");
             }
@@ -218,6 +219,26 @@ const App = () => {
         handleTabChange('inventory');
     };
 
+    // --- Custom Pie Chart Renderers ---
+    const renderActiveShape = (props) => {
+        const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+        return (
+            <g>
+                <Sector
+                    cx={cx}
+                    cy={cy}
+                    innerRadius={innerRadius}
+                    outerRadius={outerRadius + 8}
+                    startAngle={startAngle}
+                    endAngle={endAngle}
+                    fill={fill}
+                    style={{ filter: 'drop-shadow(0px 4px 10px rgba(0,0,0,0.15))', transition: 'all 0.5s ease-in-out' }}
+                />
+            </g>
+        );
+    };
+
+
     // --- Memoized Calculations ---
 
     const getEffectiveHealthScore = (asset) => asset.override_score || asset.health_score;
@@ -229,7 +250,7 @@ const App = () => {
         const healthy = assets.filter(a => getEffectiveHealthScore(a) === 'Healthy').length;
         const unscored = assets.filter(a => getEffectiveHealthScore(a) === 'Unscored').length;
         
-        // Fleet Health Index
+        // Fleet Health Index: ((Healthy * 1.0) + (Warning * 0.5) + (Critical * 0)) / Total Assets * 100
         const fleetHealth = total > 0 
             ? Math.round(((healthy * 1.0) + (warning * 0.5) + (critical * 0)) / total * 100) 
             : 0;
@@ -239,6 +260,7 @@ const App = () => {
         // --- DYNAMIC FINANCIAL RISK CALCULATION ---
         let calculatedRisk = 0;
         
+        // Create a lookup map for specs cost: { "Model Name": price }
         const specPriceMap = {};
         specs.forEach(s => {
             specPriceMap[s.model_name] = s.replacement_cost || 0;
@@ -258,7 +280,7 @@ const App = () => {
             if (!cost) {
                 if (asset.device_type === 'laptop') cost = fallLap;
                 else if (asset.device_type === 'desktop') cost = fallDesk;
-                else cost = 0;
+                else cost = 0; // Unknown device, no risk calc possible
             }
 
             if (health === 'Critical') {
@@ -273,6 +295,7 @@ const App = () => {
         const laptopCount = assets.filter(a => a.device_type === 'laptop').length;
         const desktopCount = assets.filter(a => a.device_type === 'desktop').length;
         
+        // Mocking stale data check
         const stale = assets.filter(a => a.last_updated && (new Date() - new Date(a.last_updated)) > (30 * 24 * 60 * 60 * 1000)).length;
 
         return {
@@ -339,7 +362,7 @@ const App = () => {
                                 value={`₱${stats.risk.toLocaleString(undefined, {maximumFractionDigits: 0})}`} 
                                 icon={<DollarSign className="text-red-600"/>} 
                                 color="red" 
-                                subtext="Estimated Replacement Costs (Based on Specs)"
+                                subtext="Financial Risk Exposure (Based on Specs of Current Inventory)"
                                 onClick={() => handleFilterAndNavigate('Critical')}
                             />
                         </div>
@@ -363,13 +386,23 @@ const App = () => {
                                                     data={pieData}
                                                     innerRadius={50}
                                                     outerRadius={70}
+                                                activeIndex={activeHealthIndex}
+                                                activeShape={renderActiveShape}
+                                                onMouseEnter={(_, index) => setActiveHealthIndex(index)}
+                                                onMouseLeave={() => setActiveHealthIndex(null)}
                                                     paddingAngle={5}
                                                     dataKey="value"
                                                     stroke="none"
                                                     onClick={(data) => handleFilterAndNavigate(data.name)}
                                                 >
                                                     {pieData.map((entry, index) => (
-                                                        <Cell key={entry.name} fill={COLORS[entry.name]} cursor="pointer" />
+                                                        <Cell 
+                                                            key={entry.name} 
+                                                            fill={COLORS[entry.name]} 
+                                                            cursor="pointer" 
+                                                            className="outline-none" 
+                                                        style={{ outline: 'none', transition: 'all 0.5s ease-in-out' }}
+                                                        />
                                                     ))}
                                                 </Pie>
                                                 <Tooltip />
@@ -381,7 +414,7 @@ const App = () => {
                                 </div>
                                 <div className="flex justify-center gap-4 w-full mt-4">
                                     {pieData.map(d => (
-                                        <div key={d.name} className="flex items-center gap-2">
+                                        <div key={d.name} className="flex items-center gap-2 cursor-pointer hover:underline" onClick={() => handleFilterAndNavigate(d.name)}>
                                             <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[d.name] }}></div>
                                             <span className="text-xs font-bold text-slate-500 uppercase">{d.name}</span>
                                         </div>
@@ -400,13 +433,23 @@ const App = () => {
                                                     data={deviceData}
                                                     innerRadius={50}
                                                     outerRadius={70}
+                                                activeIndex={activeDeviceIndex}
+                                                activeShape={renderActiveShape}
+                                                onMouseEnter={(_, index) => setActiveDeviceIndex(index)}
+                                                onMouseLeave={() => setActiveDeviceIndex(null)}
                                                     paddingAngle={5}
                                                     dataKey="value"
                                                     stroke="none"
                                                     onClick={(data) => handleFilterAndNavigate(data.name)}
                                                 >
                                                     {deviceData.map((entry, index) => (
-                                                        <Cell key={entry.name} fill={DEVICE_COLORS[entry.name]} cursor="pointer" />
+                                                        <Cell 
+                                                            key={entry.name} 
+                                                            fill={DEVICE_COLORS[entry.name]} 
+                                                            cursor="pointer"
+                                                            className="outline-none"
+                                                        style={{ outline: 'none', transition: 'all 0.5s ease-in-out' }}
+                                                        />
                                                     ))}
                                                 </Pie>
                                                 <Tooltip />
@@ -418,7 +461,7 @@ const App = () => {
                                 </div>
                                 <div className="flex justify-center gap-4 w-full mt-4">
                                     {deviceData.map(d => (
-                                        <div key={d.name} className="flex items-center gap-2">
+                                        <div key={d.name} className="flex items-center gap-2 cursor-pointer hover:underline" onClick={() => handleFilterAndNavigate(d.name)}>
                                             <div className="w-3 h-3 rounded-full" style={{ backgroundColor: DEVICE_COLORS[d.name] }}></div>
                                             <span className="text-xs font-bold text-slate-500 uppercase">{d.name}</span>
                                         </div>
@@ -471,7 +514,7 @@ const App = () => {
             case 'specs':
                 return <SystemConfig />;
             case 'reports':
-                return <Reporting />;
+                return <Reporting assets={assets} specs={specs} systemSettings={systemSettings} />;
             default:
                 return null;
         }

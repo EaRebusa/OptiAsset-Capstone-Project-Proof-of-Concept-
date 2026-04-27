@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { Download, FileText, BarChart2, PieChart as PieIcon, Activity, Calendar, ArrowRight, Clock } from 'lucide-react';
+import { Download, FileText, BarChart2, PieChart as PieIcon, Activity, Clock } from 'lucide-react';
 import {
     BarChart,
     Bar,
@@ -8,9 +8,10 @@ import {
     YAxis,
     CartesianGrid,
     Tooltip,
-    Legend,
     ResponsiveContainer,
-    Cell
+    Cell,
+    PieChart,
+    Pie
 } from 'recharts';
 
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
@@ -22,38 +23,66 @@ const COLORS = {
     Unscored: '#94a3b8'
 };
 
-const Reporting = () => {
+const FIN_COLORS = {
+    Replacement: '#ef4444', // Red
+    Maintenance: '#f59e0b'  // Amber
+};
+
+const Reporting = ({ assets = [], specs = [], systemSettings = {} }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [healthData, setHealthData] = useState([]);
-    const [ageData, setAgeData] = useState([]);
-    const [chartsLoading, setChartsLoading] = useState(true);
 
-    useEffect(() => {
-        const fetchCharts = async () => {
-            try {
-                const [healthRes, ageRes] = await Promise.all([
-                    axios.get(`${API_BASE_URL}/reports/charts/health-distribution`),
-                    axios.get(`${API_BASE_URL}/reports/charts/age-distribution`)
-                ]);
+    // --- Compute Data for Reporting Charts Locally ---
+    const { healthData, ageData, financialData } = useMemo(() => {
+        const healthCounts = { Healthy: 0, Warning: 0, Critical: 0, Unscored: 0 };
+        const ageAcc = {};
+        const finRisk = { Replacement: 0, Maintenance: 0 };
 
-                // Transform data for charts
-                if (Array.isArray(healthRes.data)) {
-                    setHealthData(healthRes.data.filter(item => item.value > 0));
-                }
-                if (Array.isArray(ageRes.data)) {
-                    setAgeData(ageRes.data.filter(item => item.value > 0));
-                }
-            } catch (err) {
-                console.error("Failed to load charts:", err);
-                // Non-critical, just don't show them
-            } finally {
-                setChartsLoading(false);
+        const specPriceMap = {};
+        specs.forEach(s => { specPriceMap[s.model_name] = s.replacement_cost || 0; });
+        
+        const warnMult = systemSettings?.warning_multiplier ?? 0.10;
+        const critMult = systemSettings?.critical_multiplier ?? 1.0;
+        const fallLap = systemSettings?.fallback_laptop_cost ?? 30000;
+        const fallDesk = systemSettings?.fallback_desktop_cost ?? 25000;
+
+        assets.forEach(asset => {
+            const score = asset.override_score || asset.health_score;
+            if (healthCounts[score] !== undefined) healthCounts[score]++;
+
+            const dtype = asset.device_type || 'Unknown';
+            if (!ageAcc[dtype]) ageAcc[dtype] = [];
+            ageAcc[dtype].push(asset.current_age || 0);
+
+            let cost = specPriceMap[asset.model_name];
+            if (!cost) {
+                if (dtype === 'laptop') cost = fallLap;
+                else if (dtype === 'desktop') cost = fallDesk;
+                else cost = 0;
             }
-        };
 
-        fetchCharts();
-    }, []);
+            if (score === 'Critical') finRisk.Replacement += (cost * critMult);
+            else if (score === 'Warning') finRisk.Maintenance += (cost * warnMult);
+        });
+
+        const hData = Object.keys(healthCounts)
+            .map(k => ({ name: k, value: healthCounts[k] }))
+            .filter(d => d.value > 0);
+
+        const aData = Object.keys(ageAcc)
+            .map(k => ({ name: k, value: ageAcc[k].length > 0 ? sum(ageAcc[k])/ageAcc[k].length : 0 }))
+            .filter(d => d.value > 0)
+            .map(d => ({...d, value: parseFloat(d.value.toFixed(1))}));
+
+        const fData = Object.keys(finRisk)
+            .map(k => ({ name: k, value: finRisk[k] }))
+            .filter(d => d.value > 0);
+
+        return { healthData: hData, ageData: aData, financialData: fData };
+    }, [assets, specs, systemSettings]);
+
+    function sum(arr) { return arr.reduce((a, b) => a + b, 0); }
+
 
     const handleDownloadReport = async (reportType) => {
         setLoading(true);
@@ -64,7 +93,7 @@ const Reporting = () => {
 
             if (reportType === 'monthly') {
                 url = `${API_BASE_URL}/reports/monthly-summary`;
-                filename = `OptiAsset_Monthly_Report_${new Date().toISOString().slice(0, 10)}.pdf`; // Changed extension to PDF
+                filename = `OptiAsset_Monthly_Report_${new Date().toISOString().slice(0, 10)}.pdf`;
             } else if (reportType === 'export_assets') {
                 url = `${API_BASE_URL}/assets/export`;
                 filename = `OptiAsset_Fleet_Export_${new Date().toISOString().slice(0, 10)}.csv`;
@@ -75,11 +104,7 @@ const Reporting = () => {
 
             if (!url) return;
 
-            const response = await axios.get(url, {
-                responseType: 'blob', // Important for file downloads
-            });
-
-            // Create a blob link to download
+            const response = await axios.get(url, { responseType: 'blob' });
             const urlBlob = window.URL.createObjectURL(new Blob([response.data]));
             const link = document.createElement('a');
             link.href = urlBlob;
@@ -112,7 +137,6 @@ const Reporting = () => {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Monthly Summary Card */}
                 <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-md transition-shadow group">
                     <div className="flex items-start justify-between mb-6">
                         <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
@@ -136,7 +160,6 @@ const Reporting = () => {
                     </button>
                 </div>
 
-                {/* Raw Data Export Card */}
                 <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-md transition-shadow group">
                     <div className="flex items-start justify-between mb-6">
                         <div className="p-3 bg-green-50 text-green-600 rounded-2xl group-hover:bg-green-600 group-hover:text-white transition-colors">
@@ -149,7 +172,6 @@ const Reporting = () => {
                     <h3 className="text-lg font-black text-slate-800 mb-2">Full Fleet Data Export</h3>
                     <p className="text-sm text-slate-500 mb-8 leading-relaxed">
                         Complete extraction of all active asset records, including raw telemetry (temperature, usage), health scores, and maintenance logs.
-                        Best for custom analysis in Excel or BI tools.
                     </p>
                     <button 
                         onClick={() => handleDownloadReport('export_assets')}
@@ -161,7 +183,6 @@ const Reporting = () => {
                     </button>
                 </div>
 
-                {/* Audit Logs Export Card */}
                 <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-md transition-shadow group">
                     <div className="flex items-start justify-between mb-6">
                         <div className="p-3 bg-purple-50 text-purple-600 rounded-2xl group-hover:bg-purple-600 group-hover:text-white transition-colors">
@@ -173,7 +194,7 @@ const Reporting = () => {
                     </div>
                     <h3 className="text-lg font-black text-slate-800 mb-2">Audit Trail & Event Logs</h3>
                     <p className="text-sm text-slate-500 mb-8 leading-relaxed">
-                        Chronological history of all system events, manual overrides, and archiving reasons. Crucial for compliance audits and future predictive Machine Learning training.
+                        Chronological history of all system events, manual overrides, and archiving reasons. Crucial for compliance audits and ML training.
                     </p>
                     <button 
                         onClick={() => handleDownloadReport('export_logs')}
@@ -189,86 +210,91 @@ const Reporting = () => {
             {/* Visual Charts Preview Section */}
             <div className="mt-12">
                 <h3 className="text-lg font-black text-slate-800 mb-6 uppercase tracking-tight flex items-center gap-2">
-                    <PieIcon size={18} className="text-slate-400"/> Generated Visuals
+                    <PieIcon size={18} className="text-slate-400"/> Live Report Visuals
                 </h3>
                 
-                {chartsLoading ? (
-                    <div className="flex justify-center items-center h-48 bg-slate-50 rounded-2xl border border-slate-200 border-dashed">
-                        <Activity className="animate-spin text-slate-400 mr-2" />
-                        <span className="text-sm font-bold text-slate-400">Generating charts...</span>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col items-center h-80">
-                            <h4 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-4">Health Distribution</h4>
-                            {healthData.length > 0 ? (
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart
-                                        data={healthData}
-                                        margin={{
-                                            top: 5,
-                                            right: 30,
-                                            left: 20,
-                                            bottom: 5,
-                                        }}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Financial Risk Pie Chart */}
+                    <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col items-center h-80">
+                        <h4 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-4">Financial Risk (PHP)</h4>
+                        {financialData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={financialData}
+                                        innerRadius={50}
+                                        outerRadius={80}
+                                        paddingAngle={5}
+                                        dataKey="value"
+                                        stroke="none"
+                                        isAnimationActive={false}
                                     >
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                        <XAxis dataKey="name" tick={{fontSize: 12}} axisLine={false} tickLine={false} />
-                                        <YAxis axisLine={false} tickLine={false} />
-                                        <Tooltip 
-                                            cursor={{fill: 'transparent'}}
-                                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                        />
-                                        <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={40}>
-                                            {healthData.map((entry, index) => (
-                                                <Cell key={`cell-${index}`} fill={COLORS[entry.name] || '#cbd5e1'} />
-                                            ))}
-                                        </Bar>
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            ) : (
-                                <div className="h-full w-full flex items-center justify-center bg-slate-50 rounded-xl text-slate-400 text-xs italic">
-                                    No Data Available
+                                        {financialData.map((entry, index) => (
+                                            <Cell key={entry.name} fill={FIN_COLORS[entry.name]} className="outline-none" style={{ outline: 'none' }} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip formatter={(value) => `₱${value.toLocaleString()}`} />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="h-full w-full flex items-center justify-center bg-slate-50 rounded-xl text-slate-400 text-xs italic">
+                                No Risk Detected
+                            </div>
+                        )}
+                        <div className="flex justify-center gap-4 w-full mt-4">
+                            {financialData.map(d => (
+                                <div key={d.name} className="flex items-center gap-2">
+                                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: FIN_COLORS[d.name] }}></div>
+                                    <span className="text-xs font-bold text-slate-500 uppercase">{d.name}</span>
                                 </div>
-                            )}
-                        </div>
-                        
-                        <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col items-center h-80">
-                            <h4 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-4">Average Age by Device (Months)</h4>
-                            {ageData.length > 0 ? (
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart
-                                        data={ageData}
-                                        layout="vertical"
-                                        margin={{
-                                            top: 5,
-                                            right: 30,
-                                            left: 20,
-                                            bottom: 5,
-                                        }}
-                                    >
-                                        <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                                        <XAxis type="number" axisLine={false} tickLine={false} />
-                                        <YAxis dataKey="name" type="category" width={80} tick={{fontSize: 12}} axisLine={false} tickLine={false} />
-                                        <Tooltip 
-                                            cursor={{fill: 'transparent'}}
-                                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                        />
-                                        <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            ) : (
-                                <div className="h-full w-full flex items-center justify-center bg-slate-50 rounded-xl text-slate-400 text-xs italic">
-                                    No Data Available
-                                </div>
-                            )}
+                            ))}
                         </div>
                     </div>
-                )}
-                
-                <p className="text-center text-xs text-slate-400 mt-6 font-medium">
-                    Interactive charts are generated in real-time based on current fleet data.
-                </p>
+
+                    {/* Health Distribution Bar Chart */}
+                    <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col items-center h-80">
+                        <h4 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-4">Health Distribution</h4>
+                        {healthData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={healthData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                    <XAxis dataKey="name" tick={{fontSize: 12}} axisLine={false} tickLine={false} />
+                                    <YAxis axisLine={false} tickLine={false} />
+                                    <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                                    <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={40}>
+                                        {healthData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={COLORS[entry.name] || '#cbd5e1'} />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="h-full w-full flex items-center justify-center bg-slate-50 rounded-xl text-slate-400 text-xs italic">
+                                No Data Available
+                            </div>
+                        )}
+                    </div>
+                    
+                    {/* Age Distribution Bar Chart */}
+                    <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col items-center h-80">
+                        <h4 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-4">Avg Age (Months)</h4>
+                        {ageData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={ageData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                                    <XAxis type="number" axisLine={false} tickLine={false} />
+                                    <YAxis dataKey="name" type="category" width={80} tick={{fontSize: 12}} axisLine={false} tickLine={false} />
+                                    <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                                    <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="h-full w-full flex items-center justify-center bg-slate-50 rounded-xl text-slate-400 text-xs italic">
+                                No Data Available
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
         </div>
     );

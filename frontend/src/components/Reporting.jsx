@@ -11,7 +11,8 @@ import {
     ResponsiveContainer,
     Cell,
     PieChart,
-    Pie
+    Pie,
+    Sector
 } from 'recharts';
 
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
@@ -28,9 +29,33 @@ const FIN_COLORS = {
     Maintenance: '#f59e0b'  // Amber
 };
 
+// --- Custom Pie Chart Renderers ---
+const renderActiveShape = (props) => {
+    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+    return (
+        <g>
+            <Sector
+                cx={cx}
+                cy={cy}
+                innerRadius={innerRadius}
+                outerRadius={outerRadius + 8}
+                startAngle={startAngle}
+                endAngle={endAngle}
+                fill={fill}
+                style={{ transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', filter: 'drop-shadow(0px 8px 16px rgba(0,0,0,0.2))' }}
+            />
+        </g>
+    );
+};
+
 const Reporting = ({ assets = [], specs = [], systemSettings = {} }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+
+    // States for chart hover animations
+    const [activeFinIndex, setActiveFinIndex] = useState(null);
+    const [activeHealthIndex, setActiveHealthIndex] = useState(null);
+    const [activeAgeIndex, setActiveAgeIndex] = useState(null);
 
     // --- Compute Data for Reporting Charts Locally ---
     const { healthData, ageData, financialData } = useMemo(() => {
@@ -227,10 +252,21 @@ const Reporting = ({ assets = [], specs = [], systemSettings = {} }) => {
                                         paddingAngle={5}
                                         dataKey="value"
                                         stroke="none"
-                                        isAnimationActive={false}
+                                        activeIndex={activeFinIndex}
+                                        activeShape={renderActiveShape}
+                                        onMouseEnter={(_, index) => setActiveFinIndex(index)}
+                                        onMouseLeave={() => setActiveFinIndex(null)}
+                                        animationBegin={0}
+                                        animationDuration={800}
                                     >
                                         {financialData.map((entry, index) => (
-                                            <Cell key={entry.name} fill={FIN_COLORS[entry.name]} className="outline-none" style={{ outline: 'none' }} />
+                                            <Cell 
+                                                key={entry.name} 
+                                                fill={FIN_COLORS[entry.name]} 
+                                                cursor="pointer" 
+                                                className="outline-none" 
+                                                style={{ outline: 'none', transition: 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1)', opacity: activeFinIndex !== null && activeFinIndex !== index ? 0.6 : 1 }} 
+                                            />
                                         ))}
                                     </Pie>
                                     <Tooltip formatter={(value) => `₱${value.toLocaleString()}`} />
@@ -242,8 +278,13 @@ const Reporting = ({ assets = [], specs = [], systemSettings = {} }) => {
                             </div>
                         )}
                         <div className="flex justify-center gap-4 w-full mt-4">
-                            {financialData.map(d => (
-                                <div key={d.name} className="flex items-center gap-2">
+                            {financialData.map((d, index) => (
+                                <div 
+                                    key={d.name} 
+                                    className="flex items-center gap-2 cursor-pointer"
+                                    onMouseEnter={() => setActiveFinIndex(index)}
+                                    onMouseLeave={() => setActiveFinIndex(null)}
+                                >
                                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: FIN_COLORS[d.name] }}></div>
                                     <span className="text-xs font-bold text-slate-500 uppercase">{d.name}</span>
                                 </div>
@@ -260,10 +301,28 @@ const Reporting = ({ assets = [], specs = [], systemSettings = {} }) => {
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                     <XAxis dataKey="name" tick={{fontSize: 12}} axisLine={false} tickLine={false} />
                                     <YAxis axisLine={false} tickLine={false} />
-                                    <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                                    <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={40}>
+                                    <Tooltip cursor={{fill: 'transparent'}} />
+                                    <Bar 
+                                        dataKey="value" 
+                                        radius={[4, 4, 0, 0]} 
+                                        barSize={40}
+                                        onMouseEnter={(_, index) => setActiveHealthIndex(index)}
+                                        onMouseLeave={() => setActiveHealthIndex(null)}
+                                        animationBegin={0}
+                                        animationDuration={800}
+                                    >
                                         {healthData.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={COLORS[entry.name] || '#cbd5e1'} />
+                                            <Cell 
+                                                key={`cell-${index}`} 
+                                                cursor="pointer" 
+                                                fill={COLORS[entry.name] || '#cbd5e1'} 
+                                                style={{ 
+                                                    outline: 'none', 
+                                                    transition: 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                                    opacity: activeHealthIndex !== null && activeHealthIndex !== index ? 0.6 : 1,
+                                                    filter: activeHealthIndex === index ? 'drop-shadow(0px 8px 16px rgba(0,0,0,0.2))' : 'none'
+                                                }}
+                                            />
                                         ))}
                                     </Bar>
                                 </BarChart>
@@ -284,8 +343,31 @@ const Reporting = ({ assets = [], specs = [], systemSettings = {} }) => {
                                     <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                                     <XAxis type="number" axisLine={false} tickLine={false} />
                                     <YAxis dataKey="name" type="category" width={80} tick={{fontSize: 12}} axisLine={false} tickLine={false} />
-                                    <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                                    <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
+                                    <Tooltip cursor={{fill: 'transparent'}} />
+                                    <Bar 
+                                        dataKey="value" 
+                                        fill="#3b82f6" 
+                                        radius={[0, 4, 4, 0]} 
+                                        barSize={20}
+                                        onMouseEnter={(_, index) => setActiveAgeIndex(index)}
+                                        onMouseLeave={() => setActiveAgeIndex(null)}
+                                        animationBegin={0}
+                                        animationDuration={800}
+                                    >
+                                        {ageData.map((entry, index) => (
+                                            <Cell 
+                                                key={`cell-${index}`} 
+                                                cursor="pointer" 
+                                                fill="#3b82f6" 
+                                                style={{ 
+                                                    outline: 'none', 
+                                                    transition: 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                                    opacity: activeAgeIndex !== null && activeAgeIndex !== index ? 0.6 : 1,
+                                                    filter: activeAgeIndex === index ? 'drop-shadow(0px 8px 16px rgba(0,0,0,0.2))' : 'none'
+                                                }}
+                                            />
+                                        ))}
+                                    </Bar>
                                 </BarChart>
                             </ResponsiveContainer>
                         ) : (

@@ -189,6 +189,7 @@ async def bulk_upload_json(data: List[dict], db: Session = Depends(get_db)):
         
         # If updating
         if existing_asset:
+            # We want to check what changed for logs if possible, but bulk upload might not need detailed logs per item
             existing_asset.current_temp = row.get('current_temp', existing_asset.current_temp)
             existing_asset.current_usage = row.get('current_usage', existing_asset.current_usage)
             existing_asset.maint_score = row.get('maint_score', existing_asset.maint_score)
@@ -313,12 +314,13 @@ def update_asset(asset_id: str, obj_in: AssetUpdate, db: Session = Depends(get_d
     if 'override_score' in update_data and update_data['override_score'] != asset.override_score:
         if update_data['override_score']:
             reason = update_data.get('override_reason', 'No reason provided')
-            changes.append(f"Override applied: {update_data['override_score']} ('{reason}')")
+            changes.append(f"Manual override to {update_data['override_score']}. Reason: '{reason}'")
         else:
             changes.append(f"Override removed. Reverted to system score ({asset.health_score})")
 
     # Detect telemetry changes
-    telemetry_fields = ['current_temp', 'current_usage', 'maint_score', 'repairs']
+    telemetry_fields = ['current_temp', 'current_usage', 'maint_score', 'repairs', 'initial_age']
+    
     for field in telemetry_fields:
         if field in update_data and getattr(asset, field) != update_data[field]:
             old_val = getattr(asset, field)
@@ -397,6 +399,27 @@ def restore_assets_batch(payload: AssetBatchRestore, db: Session = Depends(get_d
     db.add(log)
     db.commit()
     return {"message": f"{restored_count} assets restored."}
+
+@router.post("/purge")
+def purge_inventory(include_archived: bool = False, db: Session = Depends(get_db)):
+    """
+    Hard deletes assets from the database.
+    If include_archived is False, it only deletes active assets.
+    """
+    if include_archived:
+        deleted_count = db.query(Asset).delete()
+    else:
+        deleted_count = db.query(Asset).filter(Asset.is_active == True).delete()
+    
+    log = SystemLog(
+        action_type="DELETE", 
+        entity_type="ASSET", 
+        entity_id="BATCH_PURGE", 
+        details=f"Hard purged {deleted_count} assets from database. Included archived: {include_archived}"
+    )
+    db.add(log)
+    db.commit()
+    return {"message": f"Successfully purged {deleted_count} assets.", "deleted_count": deleted_count}
 
 @router.post("/{asset_id}/restore")
 def restore_asset(asset_id: str, db: Session = Depends(get_db)):

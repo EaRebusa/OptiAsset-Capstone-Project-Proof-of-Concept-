@@ -232,7 +232,7 @@ const App = () => {
                     startAngle={startAngle}
                     endAngle={endAngle}
                     fill={fill}
-                    style={{ filter: 'drop-shadow(0px 4px 10px rgba(0,0,0,0.15))', transition: 'all 0.5s ease-in-out' }}
+                    style={{ transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', filter: 'drop-shadow(0px 8px 16px rgba(0,0,0,0.2))' }}
                 />
             </g>
         );
@@ -394,6 +394,8 @@ const App = () => {
                                                     dataKey="value"
                                                     stroke="none"
                                                     onClick={(data) => handleFilterAndNavigate(data.name)}
+                                                    animationBegin={0}
+                                                    animationDuration={800}
                                                 >
                                                     {pieData.map((entry, index) => (
                                                         <Cell 
@@ -401,7 +403,7 @@ const App = () => {
                                                             fill={COLORS[entry.name]} 
                                                             cursor="pointer" 
                                                             className="outline-none" 
-                                                        style={{ outline: 'none', transition: 'all 0.5s ease-in-out' }}
+                                                            style={{ outline: 'none', transition: 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1)', opacity: activeHealthIndex !== null && activeHealthIndex !== index ? 0.6 : 1 }}
                                                         />
                                                     ))}
                                                 </Pie>
@@ -413,8 +415,14 @@ const App = () => {
                                     )}
                                 </div>
                                 <div className="flex justify-center gap-4 w-full mt-4">
-                                    {pieData.map(d => (
-                                        <div key={d.name} className="flex items-center gap-2 cursor-pointer hover:underline" onClick={() => handleFilterAndNavigate(d.name)}>
+                                    {pieData.map((d, index) => (
+                                        <div 
+                                            key={d.name} 
+                                            className="flex items-center gap-2 cursor-pointer hover:underline" 
+                                            onClick={() => handleFilterAndNavigate(d.name)}
+                                            onMouseEnter={() => setActiveHealthIndex(index)}
+                                            onMouseLeave={() => setActiveHealthIndex(null)}
+                                        >
                                             <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[d.name] }}></div>
                                             <span className="text-xs font-bold text-slate-500 uppercase">{d.name}</span>
                                         </div>
@@ -441,6 +449,8 @@ const App = () => {
                                                     dataKey="value"
                                                     stroke="none"
                                                     onClick={(data) => handleFilterAndNavigate(data.name)}
+                                                    animationBegin={0}
+                                                    animationDuration={800}
                                                 >
                                                     {deviceData.map((entry, index) => (
                                                         <Cell 
@@ -448,7 +458,7 @@ const App = () => {
                                                             fill={DEVICE_COLORS[entry.name]} 
                                                             cursor="pointer"
                                                             className="outline-none"
-                                                        style={{ outline: 'none', transition: 'all 0.5s ease-in-out' }}
+                                                            style={{ outline: 'none', transition: 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1)', opacity: activeDeviceIndex !== null && activeDeviceIndex !== index ? 0.6 : 1 }}
                                                         />
                                                     ))}
                                                 </Pie>
@@ -460,8 +470,14 @@ const App = () => {
                                     )}
                                 </div>
                                 <div className="flex justify-center gap-4 w-full mt-4">
-                                    {deviceData.map(d => (
-                                        <div key={d.name} className="flex items-center gap-2 cursor-pointer hover:underline" onClick={() => handleFilterAndNavigate(d.name)}>
+                                    {deviceData.map((d, index) => (
+                                        <div 
+                                            key={d.name} 
+                                            className="flex items-center gap-2 cursor-pointer hover:underline" 
+                                            onClick={() => handleFilterAndNavigate(d.name)}
+                                            onMouseEnter={() => setActiveDeviceIndex(index)}
+                                            onMouseLeave={() => setActiveDeviceIndex(null)}
+                                        >
                                             <div className="w-3 h-3 rounded-full" style={{ backgroundColor: DEVICE_COLORS[d.name] }}></div>
                                             <span className="text-xs font-bold text-slate-500 uppercase">{d.name}</span>
                                         </div>
